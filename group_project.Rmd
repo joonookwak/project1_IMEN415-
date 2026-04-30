@@ -53,5 +53,6 @@ df_accdmg     <- totacts_nd %>% filter(ACCDMG > upper)
 df_casualties <- totacts_nd ㅌ%>% filter(Casualties >= 1)
 dasndadfbsaifsdifhasiudahiusaiuhfdasuidfashuifadisjdsai
 노알라
+예아아아아아앙아ㅏㅇ아아아아아아아아아아아ㅏ
 ```
 
