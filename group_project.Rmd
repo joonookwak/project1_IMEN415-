@@ -1,0 +1,55 @@
+---
+title: "group_project"
+output: pdf_document
+date: "2026-04-30"
+---
+
+```{r}
+traindir <- "/Users/kwakjoonoo/Desktop/Multivariate_Analysis/Train Data"
+sourcedir <-"/Users/kwakjoonoo/Desktop/Multivariate_Analysis"
+system("git remote -v")
+setwd(sourcedir)
+source("AccidentInput.R")
+
+library(ggplot2)
+library(dplyr)
+# Load a list of data frames for each year of accident data
+acts <- file.inputl(traindir)
+
+# combine into one data frame
+totacts <- combine.data(acts)
+
+# setup categorical variables
+totacts$TYPE <- factor(totacts$TYPE, labels = c("Derailment", "HeadOn", 
+                                                "Rearend", "Side", "Raking", "BrokenTrain", "Hwy-Rail", 
+                                                "GradeX", "Obstruction", "Explosive", "Fire","Other",
+                                                "SeeNarrative" ))
+
+totacts$TYPEQ <- sub("\\.0$", "", totacts$TYPEQ)
+totacts$TYPEQ[totacts$TYPEQ %in% c("O", "")] <- ""
+totacts$TYPEQ <- factor(totacts$TYPEQ, labels = c("NA", "Freight", "Passenger", "Commuter", 
+                                                  "Work",  "Single", "CutofCars", "Yard", "Light", "Maint",
+                                                  "MaintOfWay", "Passenger", "Commuter", "ElectricMulti", "ElectricMulti"))
+
+totacts$Cause <- rep(NA, nrow(totacts))
+
+totacts$Cause[which(substr(totacts$CAUSE, 1, 1) == "M")] <- "M"
+totacts$Cause[which(substr(totacts$CAUSE, 1, 1) == "T")] <- "T"
+totacts$Cause[which(substr(totacts$CAUSE, 1, 1) == "S")] <- "S"
+totacts$Cause[which(substr(totacts$CAUSE, 1, 1) == "H")] <- "H"
+totacts$Cause[which(substr(totacts$CAUSE, 1, 1) == "E")] <- "E"
+
+totacts$Cause <- factor(totacts$Cause)
+
+totacts$Casualties <- totacts$TOTINJ + totacts$TOTKLD
+# 중복 제거
+totacts_nd<- totacts[!(duplicated(totacts[, c("INCDTNO", "YEAR", "MONTH", "DAY", "TIMEHR", "TIMEMIN")])),]
+
+# 과제 대상 data frmae
+dmgbox <- ggplot(totacts_nd, aes(y = ACCDMG)) + geom_boxplot()
+upper  <- ggplot_build(dmgbox)$data[[1]]$ymax
+
+df_accdmg     <- totacts_nd %>% filter(ACCDMG > upper)
+df_casualties <- totacts_nd ㅌ%>% filter(Casualties >= 1)
+```
+
