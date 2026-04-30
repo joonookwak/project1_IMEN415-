@@ -52,6 +52,6 @@ upper  <- ggplot_build(dmgbox)$data[[1]]$ymax
 df_accdmg     <- totacts_nd %>% filter(ACCDMG > upper)
 df_casualties <- totacts_nd ㅌ%>% filter(Casualties >= 1)
 dasndadfbsaifsdifhasiudahiusaiuhfdasuidfashuifadisjdsai
-노알라
+노알라랴ㅓㅁ내ㅑㅇ럼내야ㅓ매ㅑ어매ㅑㄹㄴㅁ이ㅑㅓㅁ내어ㅑㅓㄴㅊㅁ챠ㅓㅁ츠ㅐㄴ먀ㅗㅜ쳐ㅑㅁ놀먼옴냐ㅐㅕㅗㅇㄹㅁㄹ매ㅑㄴ러매ㅑㄴ러매ㅑㄹㅁㄴ어매
 ```
 
