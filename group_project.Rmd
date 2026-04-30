@@ -60,7 +60,7 @@ df_casualties <- totacts_nd ㅌ%>% filter(Casualties >= 1)
 
 ```{r}
 #ACCDMG 가설 2
-
+ㄴㅇ머누
 ```
 
 ```{r}
