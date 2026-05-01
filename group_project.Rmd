@@ -3,6 +3,13 @@ title: "group_project"
 output: pdf_document
 date: "2026-04-30"
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
 
 ```{r}
 traindir <- "/Users/kwakjoonoo/Desktop/Multivariate_Analysis/Train Data"
@@ -50,7 +57,7 @@ dmgbox <- ggplot(totacts_nd, aes(y = ACCDMG)) + geom_boxplot()
 upper  <- ggplot_build(dmgbox)$data[[1]]$ymax
 
 df_accdmg     <- totacts_nd %>% filter(ACCDMG > upper)
-df_casualties <- totacts_nd ㅌ%>% filter(Casualties >= 1)
+df_casualties <- totacts_nd %>% filter(Casualties >= 1)
 
 ```
 
@@ -69,7 +76,472 @@ df_casualties <- totacts_nd ㅌ%>% filter(Casualties >= 1)
 ```
 
 ```{r}
-#Casualties 가설 2
+#Casualties 가설 2 후보비교
 
+library(ggplot2)
+library(dplyr)
+
+# ── 공통 전처리 ─────────────────────────────────────────────
+# 빈 문자열 NA 처리 후 factor 변환
+df_casualties <- df_casualties %>%
+  mutate(
+    TRNSPD    = as.numeric(TRNSPD),
+    TONS      = as.numeric(TONS),
+    CARS      = as.numeric(CARS),
+    CARSHZD   = as.numeric(CARSHZD),
+    HZD_RATIO = CARSHZD / (CARS + 1),
+    PASSTRN   = ifelse(PASSTRN %in% c("N", "Y"), PASSTRN, NA),  # ← 빈 문자열 NA 처리
+    PASSTRN   = factor(PASSTRN, levels = c("N", "Y"), 
+                       labels = c("Freight", "Passenger")),
+    TYPTRK_GRP = factor(case_when(
+      TYPTRK == 1 ~ "MainLine",
+      TYPTRK == 2 ~ "Yard",
+      TRUE        ~ "Other"
+    ))
+  )
+
+# 확인
+table(df_casualties$PASSTRN)
+
+# ── 후보 1: TYPTRK × TRNSPD (수업 형식) ─────────────────────
+
+# Step 1: TRNSPD를 Low/High로 cut
+Speed_cas <- cut(df_casualties$TRNSPD, 
+                 c(min(df_casualties$TRNSPD, na.rm=T),
+                   median(df_casualties$TRNSPD, na.rm=T),
+                   max(df_casualties$TRNSPD, na.rm=T)), 
+                 include.lowest=T, 
+                 labels=c("Low Speed","High Speed"))
+
+# Step 2: Yard 더미변수 생성 (수업 방식)
+df_casualties$Yard <- rep(0, nrow(df_casualties))
+df_casualties$Yard[which(df_casualties$TYPTRK == 2)] <- 1
+df_casualties$Yard <- as.factor(df_casualties$Yard)
+
+# interaction.plot (수업 방식)
+interaction.plot(Speed_cas, df_casualties$Yard, 
+                 df_casualties$Casualties,
+                 main="Interaction: TYPTRK(Yard) × Speed on Casualties",
+                 xlab="Speed", ylab="Mean Casualties",
+                 legend=T)
+
+# ggplot: y축 범위 제한으로 기울기 명확하게
+qplot(x=TRNSPD, y=Casualties, data=df_casualties, colour=Yard) +
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0, 20)) +   # ← 이상치 제외하고 확대
+  labs(title="Interaction: TYPTRK(Yard) × TRNSPD on Casualties",
+       x="Train Speed (mph)", y="Casualties",
+       colour="Yard(1=Yes)") +
+  theme_bw()
+
+# ── 후보 2: PASSTRN × TRNSPD (수업 형식) ────────────────────
+interaction.plot(Speed_cas, df_casualties$PASSTRN,
+                 df_casualties$Casualties,
+                 main="Interaction: PASSTRN × Speed on Casualties",
+                 xlab="Speed", ylab="Mean Casualties")
+
+qplot(x=TRNSPD, y=Casualties, data=df_casualties, colour=PASSTRN) +
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0, 20)) +   # ← y축 제한
+  labs(title="Interaction: PASSTRN × TRNSPD on Casualties",
+       x="Train Speed (mph)", y="Casualties") +
+  theme_bw()
+
+# ── 후보 3: PASSTRN × HZD_RATIO (HZD_RATIO > 0) ─────────────
+df_hzd <- df_casualties %>% filter(HZD_RATIO > 0)
+
+HZD_cut <- cut(df_hzd$HZD_RATIO,
+               c(min(df_hzd$HZD_RATIO),
+                 median(df_hzd$HZD_RATIO),
+                 max(df_hzd$HZD_RATIO)),
+               include.lowest=T,
+               labels=c("Low HZD","High HZD"))
+
+interaction.plot(HZD_cut, df_hzd$PASSTRN,
+                 df_hzd$Casualties,
+                 main="Interaction: PASSTRN × HZD_RATIO on Casualties",
+                 xlab="HZD_RATIO", ylab="Mean Casualties")
+
+qplot(x=HZD_RATIO, y=Casualties, data=df_hzd, colour=PASSTRN) +
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0, 20)) +
+  labs(title="Interaction: PASSTRN × HZD_RATIO on Casualties",
+       x="Hazardous Car Ratio", y="Casualties") +
+  theme_bw()
+
+# ── 후보 4: Cause × TONS (수업 형식) ─────────────────────────
+df_cause <- df_casualties %>% filter(Cause %in% c("H","M","T"))
+
+Tons_cas <- cut(df_cause$TONS,
+                c(min(df_cause$TONS, na.rm=T),
+                  median(df_cause$TONS, na.rm=T),
+                  max(df_cause$TONS, na.rm=T)),
+                include.lowest=T,
+                labels=c("Low Tons","High Tons"))
+
+interaction.plot(Tons_cas, df_cause$Cause,
+                 df_cause$Casualties,
+                 main="Interaction: Cause × TONS on Casualties",
+                 xlab="Tons", ylab="Mean Casualties")
+
+qplot(x=TONS, y=Casualties, data=df_cause, colour=Cause) +
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0, 20)) +
+  labs(title="Interaction: Cause × TONS on Casualties",
+       x="Total Tons", y="Casualties") +
+  theme_bw()
+```
+```{r}
+# ── 전처리: OpenLine vs YardType ─────────────────────────────
+df_casualties <- df_casualties %>%
+  mutate(
+    TRNSPD = as.numeric(TRNSPD),
+    TYPTRK_GRP = factor(case_when(
+      TYPTRK %in% c(1, 3) ~ "OpenLine",   # MainLine + Siding
+      TYPTRK %in% c(2, 4) ~ "YardType",   # Yard + Industry
+      TRUE ~ NA_character_
+    ))
+  ) %>%
+  filter(!is.na(TYPTRK_GRP))  # NA 제거
+
+# 분포 확인
+table(df_casualties$TYPTRK_GRP)
+
+# ── Interaction Plot (수업 방식) ──────────────────────────────
+Speed_cas <- cut(df_casualties$TRNSPD,
+                 c(min(df_casualties$TRNSPD, na.rm=T),
+                   median(df_casualties$TRNSPD, na.rm=T),
+                   max(df_casualties$TRNSPD, na.rm=T)),
+                 include.lowest=T,
+                 labels=c("Low Speed","High Speed"))
+
+# interaction.plot
+interaction.plot(Speed_cas, df_casualties$TYPTRK_GRP,
+                 df_casualties$Casualties,
+                 main="Interaction: TYPTRK_GRP × Speed on Casualties",
+                 xlab="Speed", ylab="Mean Casualties",
+                 col=c("red","blue"), lwd=2)
+
+# ggplot 버전
+qplot(x=TRNSPD, y=Casualties, 
+      data=df_casualties, colour=TYPTRK_GRP) +
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0, 20)) +
+  labs(title="Interaction: TYPTRK_GRP × TRNSPD on Casualties",
+       x="Train Speed (mph)", y="Casualties",
+       colour="Track Type") +
+  theme_bw()
+```
+
+
+```{r}
+#Casualties 가설 2
+#Step 1: 가설 기반 기본 모델
+#Casualties ~ TYPTRK_GRP * TRNSPD
+
+#Step 2: 변수 추가 탐색
+#Casualties ~ TYPTRK_GRP * TRNSPD + 통제변수들
+
+#Step 3: Occam's Razor
+#불필요한 변수 제거 → 최적 모델 선택
+
+#Step 4: 결과로 가설 재평가
+#순서로 진행
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(car)
+library(MASS)
+library(ggfortify)
+library(boot)
+
+# ── Step 1: Y 분포 확인 ──────────────────────────────────────
+ggplot(df_casualties, aes(Casualties)) +
+  geom_density() +
+  labs(title="Distribution of Casualties") +
+  theme_bw()
+
+```
+심하게 right-skewed → 변환 필요
+
+```{r}
+# ── Step 2: 기본 모델 구축 ───────────────────────────────────
+# Main effects only
+cas.lm1 <- lm(Casualties ~ TYPTRK_GRP + TRNSPD,
+              data = df_casualties)
+summary(cas.lm1)
+```
+TYPTRK_GRP (p=0.722): YardType과 OpenLine의 평균 사상자 수 차이는 없다.
+TRNSPD (p=0.039): 속도가 1mph 증가하면 사상자 +0.030명 증가. 유의하지만 효과가 매우 작음.
+→ 선로 종류 자체는 사상자에 영향 없음
+
+```{r}
+# 교호작용 포함 (가설 검증 모델)
+cas.lm2 <- lm(Casualties ~ TYPTRK_GRP * TRNSPD,
+              data = df_casualties)
+summary(cas.lm2)
+```
+
+lm2에서 TYPTRK_GRP(p=0.085)와 TRNSPD(p=0.072)가 단독으로는 유의하지 않지만 교호작용은 유의.
+이건 두 변수의 개별 효과보다 함께 작용할 때 의미가 생긴다는 뜻
+
+어떤 모델을 선택?
+lm2 선택 근거:
+첫째, 교호작용 텀이 유의 (p=0.026), interatcion plot  → 가설 검증에 필요
+둘째, Adjusted R²가 lm1보다 높음 (0.00209 > 0.00111)
+셋째, 전체 모델 F-test p값이 더 작음 (0.0098 < 0.0397)
+```{r}
+#partial F-test
+anova(cas.lm1, cas.lm2)
+```
+p-value = 0.02644 <0.05
+교호작용 고려한 모델을 쓰는게 맞다
+
+```{r}
+# ── Step 3: 모델 진단 ────────────────────────────────────────
+autoplot(cas.lm2, which=c(1,2,3,5), ncol=2, label.size=3) +
+  theme_bw()
+```
+:선형성, 정규성, 등분산성 싹다 위반 → 변환 필요
+1. Residuals vs Fitted
+- 잔차가 0 근처에 몰려있고 위로 튀는 패턴
+- 관측치 306이 극단적 이상치
+- 등분산성 위반, 선형성 위반
+2. Normal Q-Q 
+- 오른쪽 꼬리가 심하게 위로 벗어남
+- 306, 1982, 2507 극단적 이상치
+- 정규성 심각하게 위반
+3. Scale-Location 
+- 추세선이 우상향 (수평이어야 함)
+- 등분산성 위반 확인
+4. Residuals vs Leverage 
+- 표준화 잔차가 ±3 훨씬 초과 (306번: 50!)
+- Leverage는 낮음 → 영향치는 아님
+- 이상치(outlier)는 맞음
+
+```{r}
+# ── Step 4: Box-Cox 변환 ─────────────────────────────────────
+# Y에 문제 있는지 확인 후 변환
+# Y 분포 확인
+ggplot(df_casualties, aes(Casualties)) +
+  geom_density() +
+  labs(title="Distribution of Casualties") +
+  theme_bw()
+
+boxcox(cas.lm2)
+
+L <- boxcox(cas.lm2, plotit=F)$x[
+       which.max(boxcox(cas.lm2, plotit=F)$y)]
+L  # L 확인 → 0에 가까우면 log 변환
+
+# Box-Cox 변환 모델
+cas.lm3 <- lm((Casualties^L - 1)/L ~ TYPTRK_GRP * TRNSPD,
+              data = df_casualties)
+summary(cas.lm3)
+```
+좋은 소식 ✅
+변환 전 (cas.lm2):  Adjusted R² = 0.00209
+변환 후 (cas.lm3):  Adjusted R² = 0.02024  ← 10배 향상!
+
+전체 모델 p-value: < 2.2e-16 *** ← 매우 유의
+TYPTRK_GRP:  p < 0.001 ***  ← 변환 후 더 유의해짐!
+TRNSPD:      p < 0.001 ***  ← 변환 후 더 유의해짐!
+
+나쁜 소식 ⚠️
+교호작용 텀 TYPTRK_GRP:TRNSPD: p = 0.111 ← 유의하지 않음
+변환 후 교호작용이 사라졌어요. 이건 중요한 발견이에요.
+
+해석
+변환 전: 교호작용 유의 (p=0.026), R²=0.002
+변환 후: 교호작용 비유의 (p=0.111), R²=0.020
+변환 전 교호작용이 유의했던 건 극단값(1001명 등)이 만들어낸 허상이었을 가능성이 있어요. 
+변환 후가 더 신뢰할 수 있는 결과예요.
+
+```{r}
+library(boot)
+library(car)
+
+# vif확인
+vif(cas.lm3)
+```
+교호작용 모델의 분산팽창계수(VIF)를 확인한 결과 모든 변수에서 VIF < 5로 다중공선성 문제가 없음을 확인하였다. 따라서 centering 없이 원래 모델을 유지하였다
+
+```{r}
+# ── Step 3: 모델 비교 (AIC, Adj R²) ─────────────────────────
+AIC(cas.lm1, cas.lm2, cas.lm3)
+BIC(cas.lm1, cas.lm2, cas.lm3)
+summary(cas.lm1)$adj.r.squared
+summary(cas.lm2)$adj.r.squared
+summary(cas.lm3)$adj.r.squared
+```
+boxcoc 변환 모델(교호작용 포함) 선택 근거 추가
+```{r}
+# 변환 후 진단 플롯
+autoplot(cas.lm3, which=c(1,2,3,5), ncol=2, label.size=3) +
+  theme_bw() +
+  ggtitle("Box-Cox (L=-1.5) Transformation")
+
+# log 변환도 비교
+cas.lm4 <- lm(log(Casualties) ~ TYPTRK_GRP * TRNSPD,
+              data=df_casualties)
+autoplot(cas.lm4, which=c(1,2,3,5), ncol=2, label.size=3) +
+  theme_bw() +
+  ggtitle("Log Transformation")
+```
+Casualties는 양의 정수값만 갖는 이산형 변수로, Box-Cox 및 log 변환 후에도 잔차의 정규성과 등분산성 가정이 완전히 충족되지 않았다. 이는 선형 회귀 모델의 근본적 한계로, 
+--> 
+정규성 위반 심각 ✅ → Bootstrapping 적용 근거 있음
+이산형 데이터   ✅ → 비모수 방법이 더 적절
+데이터 충분     ✅ → 4,009건 (bootstrapping에 충분)
+```{r}
+#bootstrapping 하기 전에 x transforming 해보기
+# TRNSPD 분포 확인
+ggplot(df_casualties, aes(x=TRNSPD)) +
+  geom_histogram(bins=50) +
+  labs(title="Distribution of TRNSPD") +
+  theme_bw()
+
+# X 변환 모델들 시도
+# log 변환
+cas.lm3.logx <- lm((Casualties^L-1)/L ~ 
+                   TYPTRK_GRP * log(TRNSPD+1),
+                   data=df_casualties)
+
+# 제곱근 변환
+cas.lm3.sqrtx <- lm((Casualties^L-1)/L ~ 
+                    TYPTRK_GRP * sqrt(TRNSPD),
+                    data=df_casualties)
+
+# 진단 플롯 비교
+autoplot(cas.lm3.logx, which=c(1,2,3,5),
+         ncol=2, label.size=3) +
+  theme_bw() + ggtitle("Box-Cox Y + log(X+1)")
+
+autoplot(cas.lm3.sqrtx, which=c(1,2,3,5),
+         ncol=2, label.size=3) +
+  theme_bw() + ggtitle("Box-Cox Y + sqrt(X)")
+
+# 모델 비교
+AIC(cas.lm3, cas.lm3.logx, cas.lm3.sqrtx)
+summary(cas.lm3.logx)$adj.r.squared
+summary(cas.lm3.sqrtx)$adj.r.squared
+```
+
+```{r}
+# ── Step 5: Bootstrapping ────────────────────────────────────
+# ── 전체 계수 신뢰구간 ────────────────────────────────────────
+ci_b0 <- boot.ci(boot.result, index=1, type="perc")  # β₀
+ci_b1 <- boot.ci(boot.result, index=2, type="perc")  # β₁
+ci_b2 <- boot.ci(boot.result, index=3, type="perc")  # β₂
+ci_b3 <- boot.ci(boot.result, index=4, type="perc")  # β₃ ← 가설
+
+# 한눈에 보기
+boot_summary <- data.frame(
+  Term      = c("β₀ (Intercept)",
+                "β₁ (YardType)",
+                "β₂ (TRNSPD)",
+                "β₃ (YardType:TRNSPD)"),
+  Estimate  = boot.result$t0,
+  CI_lower  = c(ci_b0$percent[4], ci_b1$percent[4],
+                ci_b2$percent[4], ci_b3$percent[4]),
+  CI_upper  = c(ci_b0$percent[5], ci_b1$percent[5],
+                ci_b2$percent[5], ci_b3$percent[5])
+)
+boot_summary
+
+# ── 전체 계수 시각화 (한번에) ─────────────────────────────────
+boot.df.all <- data.frame(
+  coef = c(boot.result$t[,1], boot.result$t[,2],
+           boot.result$t[,3], boot.result$t[,4]),
+  term = rep(c("β₀ Intercept",
+               "β₁ YardType",
+               "β₂ TRNSPD",
+               "β₃ YardType:TRNSPD"), each=1000)
+)
+
+ggplot(boot.df.all, aes(x=coef)) +
+  geom_histogram(bins=50, fill="steelblue", alpha=0.7) +
+  geom_vline(xintercept=0, color="red", linetype="dashed") +
+  facet_wrap(~term, scales="free") +
+  labs(title="Bootstrap Distribution: All Coefficients",
+       subtitle="Red=0",
+       x="Coefficient", y="Count") +
+  theme_bw()
+```
+전체 모델 : Ytransform = B0 + B1 * (TYPTRK_GRPYardType) + B2 * (TRNSPD) + B3 * (TYPTRK_GRPYardType:TRNSPD)
+H0 : B3 = 0
+B3만 기각 불가 -> 
+"Box-Cox 변환 모델에서 TYPTRK_GRP(β₁)와 TRNSPD(β₂)는 Bootstrap 95% CI가 0을 포함하지 않아 유의하였으나, 핵심 가설인 교호작용 계수 β₃의 95% CI는 (-0.0016, 0.0058)로 0을 포함하여 귀무가설을 기각하지 못하였다. 즉, 현재 데이터로는 YardType과 OpenLine 간 속도의 영향력 차이를 통계적으로 입증하기 어렵다."
+```{r}
+
+# ── Step 6: 통제변수 추가 탐색 ───────────────────────────────
+# 변환된 Y로 더 풍부한 모델 시도
+cas.lm5 <- lm(log(Casualties) ~ TYPTRK_GRP * TRNSPD
+              + Cause,
+              data = df_casualties)
+summary(cas.lm5)
+
+cas.lm6 <- lm(log(Casualties) ~ TYPTRK_GRP * TRNSPD
+              + Cause + PASSTRN,
+              data = df_casualties)
+summary(cas.lm6)
+
+# ── Step 7: Stepwise로 최적 변수 선택 ───────────────────────
+cas.lm6.step <- step(cas.lm6, trace=T)
+summary(cas.lm6.step)
+
+# ── Step 8: 모델 비교 ────────────────────────────────────────
+# AIC
+AIC(cas.lm4, cas.lm5, cas.lm6, cas.lm6.step)
+
+# Adjusted R²
+summary(cas.lm4)$adj.r.squared
+summary(cas.lm5)$adj.r.squared
+summary(cas.lm6)$adj.r.squared
+summary(cas.lm6.step)$adj.r.squared
+
+# Partial F-test (nested 모델 비교)
+anova(cas.lm4, cas.lm5)  # Cause 추가 효과
+anova(cas.lm5, cas.lm6)  # PASSTRN 추가 효과
+
+# ── Step 9: Test set으로 최종 검증 ──────────────────────────
+source("TestSet.R")
+
+pmse_lm4 <- NULL
+pmse_step <- NULL
+
+for(i in 1:20){
+  test.size <- 1/3
+  cas.data <- test.set(df_casualties, test.size)
+
+  lm4.train <- lm(log(Casualties) ~ TYPTRK_GRP * TRNSPD,
+                  data=cas.data$train)
+  step.train <- lm(formula(cas.lm6.step),
+                   data=cas.data$train)
+
+  lm4.pred  <- predict(lm4.train,  newdata=cas.data$test)
+  step.pred <- predict(step.train, newdata=cas.data$test)
+
+  pmse_lm4  <- c(pmse_lm4,  mse(lm4.pred,
+                                 log(cas.data$test$Casualties)))
+  pmse_step <- c(pmse_step, mse(step.pred,
+                                log(cas.data$test$Casualties)))
+}
+
+# PMSE 비교
+t.test(pmse_lm4, pmse_step, paired=T)
+
+# 시각화
+Index <- 1:20
+df_pmse <- data.frame(Index, pmse_lm4, pmse_step)
+ggplot(df_pmse, aes(x=Index)) +
+  geom_line(aes(y=pmse_lm4),  color="blue", size=1) +
+  geom_line(aes(y=pmse_step), color="red",
+            linetype="twodash", size=1) +
+  labs(title="Model Comparison: PMSE over 20 runs",
+       y="PMSE") +
+  theme_bw()
 ```
 
