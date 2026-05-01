@@ -1,14 +1,14 @@
 ---
 title: "group_project"
-output: pdf_document
+output:
+  word_document: default
+  pdf_document: default
 date: "2026-04-30"
 ---
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo    = TRUE,
-  warning = FALSE,
-  message = FALSE
-)
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+knitr::opts_knit$set(root.dir = 
+  "/Users/kwakjoonoo/Desktop/Multivariate_Analysis")
 ```
 
 ```{r}
@@ -67,7 +67,7 @@ df_casualties <- totacts_nd %>% filter(Casualties >= 1)
 
 ```{r}
 #ACCDMG 가설 2
-ㄴㅇ머누
+
 ```
 
 ```{r}
@@ -203,7 +203,12 @@ df_casualties <- df_casualties %>%
     ))
   ) %>%
   filter(!is.na(TYPTRK_GRP))  # NA 제거
+# df_casualties 생성 후 바로
+df_casualties <- df_casualties %>%
+  filter(!is.na(PASSTRN))
 
+cat("PASSTRN NA 제거 후:", nrow(df_casualties), "\n")
+# 4,009 → 3,982행
 # 분포 확인
 table(df_casualties$TYPTRK_GRP)
 
@@ -298,7 +303,15 @@ anova(cas.lm1, cas.lm2)
 ```
 p-value = 0.02644 <0.05
 교호작용 고려한 모델을 쓰는게 맞다
-
+```{r}
+# ── Step 3: 모델 비교 (AIC, Adj R²) ─────────────────────────
+AIC(cas.lm1, cas.lm2)
+BIC(cas.lm1, cas.lm2)
+summary(cas.lm1)$adj.r.squared
+summary(cas.lm2)$adj.r.squared
+```
+AIC, adj.r.squared -> lm2
+BIC -> lm1 ?
 ```{r}
 # ── Step 3: 모델 진단 ────────────────────────────────────────
 autoplot(cas.lm2, which=c(1,2,3,5), ncol=2, label.size=3) +
@@ -368,15 +381,15 @@ vif(cas.lm3)
 ```
 교호작용 모델의 분산팽창계수(VIF)를 확인한 결과 모든 변수에서 VIF < 5로 다중공선성 문제가 없음을 확인하였다. 따라서 centering 없이 원래 모델을 유지하였다
 
-```{r}
-# ── Step 3: 모델 비교 (AIC, Adj R²) ─────────────────────────
-AIC(cas.lm1, cas.lm2, cas.lm3)
-BIC(cas.lm1, cas.lm2, cas.lm3)
-summary(cas.lm1)$adj.r.squared
-summary(cas.lm2)$adj.r.squared
-summary(cas.lm3)$adj.r.squared
-```
+
 boxcoc 변환 모델(교호작용 포함) 선택 근거 추가
+```{r}
+#boxcox 변환 후 y distributuion
+ggplot(as.data.frame((df_casualties$Casualties^L-1)/L), aes((df_casualties$Casualties^L-1)/L)) + geom_density()
+```
+"Box-Cox 변환(L=-1.5) 후 Y의 분포가 bimodal 패턴을 보였다. 이는 Casualties가 양의 정수값만 취하는 이산형 변수의 구조적 특성에서 기인하며, 어떤 변환으로도 완전한 정규분포를 달성하기 어렵다. 
+그러나 변환 후 AIC가 가장 낮고(55.76) Adjusted R²가 10배 향상되어, 가용한 변환 중 Box-Cox(L=-1.5)를 최적으로 판단하였다."
+
 ```{r}
 # 변환 후 진단 플롯
 autoplot(cas.lm3, which=c(1,2,3,5), ncol=2, label.size=3) +
@@ -390,6 +403,8 @@ autoplot(cas.lm4, which=c(1,2,3,5), ncol=2, label.size=3) +
   theme_bw() +
   ggtitle("Log Transformation")
 ```
+그나마 boxcox가 낫다.
+
 Casualties는 양의 정수값만 갖는 이산형 변수로, Box-Cox 및 log 변환 후에도 잔차의 정규성과 등분산성 가정이 완전히 충족되지 않았다. 이는 선형 회귀 모델의 근본적 한계로, 
 --> 
 정규성 위반 심각 ✅ → Bootstrapping 적용 근거 있음
@@ -428,120 +443,135 @@ AIC(cas.lm3, cas.lm3.logx, cas.lm3.sqrtx)
 summary(cas.lm3.logx)$adj.r.squared
 summary(cas.lm3.sqrtx)$adj.r.squared
 ```
+Box-Cox 변환(L=-1.5) 후에도 잔차의 이산적 패턴이 관찰되어 TRNSPD에 대한 log 및 제곱근 변환을 추가로 시도하였다. 그러나 AIC 비교 결과(55.76 vs 68.00, 74.32) X 변환이 모델을 개선하지 못하였으며, 이는 잔차 문제가 X가 아닌 Y(Casualties)의 이산형 구조에서 기인함을 확인하였다. 따라서 X 변환 없이 cas.lm3을 최종 모델로 유지하였다.
 
-```{r}
-# ── Step 5: Bootstrapping ────────────────────────────────────
-# ── 전체 계수 신뢰구간 ────────────────────────────────────────
-ci_b0 <- boot.ci(boot.result, index=1, type="perc")  # β₀
-ci_b1 <- boot.ci(boot.result, index=2, type="perc")  # β₁
-ci_b2 <- boot.ci(boot.result, index=3, type="perc")  # β₂
-ci_b3 <- boot.ci(boot.result, index=4, type="perc")  # β₃ ← 가설
+```{r bootstrap_run}
+# boot.result 생성
+boot.fn <- function(data, index){
+  fit <- lm((Casualties^L-1)/L ~ TYPTRK_GRP * TRNSPD,
+            data=data, subset=index)
+  coef(fit)
+}
+set.seed(415)
+boot.result <- boot(df_casualties, boot.fn, R=1000)
+boot.result
+```
 
-# 한눈에 보기
+```{r bootstrap_ci}
+# boot.result 생성 후에 실행
+ci_b0 <- boot.ci(boot.result, index=1, type="perc")
+ci_b1 <- boot.ci(boot.result, index=2, type="perc")
+ci_b2 <- boot.ci(boot.result, index=3, type="perc")
+ci_b3 <- boot.ci(boot.result, index=4, type="perc")
+
 boot_summary <- data.frame(
-  Term      = c("β₀ (Intercept)",
-                "β₁ (YardType)",
-                "β₂ (TRNSPD)",
-                "β₃ (YardType:TRNSPD)"),
-  Estimate  = boot.result$t0,
-  CI_lower  = c(ci_b0$percent[4], ci_b1$percent[4],
-                ci_b2$percent[4], ci_b3$percent[4]),
-  CI_upper  = c(ci_b0$percent[5], ci_b1$percent[5],
-                ci_b2$percent[5], ci_b3$percent[5])
+  Term     = c("β₀ (Intercept)",
+               "β₁ (YardType)",
+               "β₂ (TRNSPD)",
+               "β₃ (YardType:TRNSPD)"),
+  Estimate = boot.result$t0,
+  CI_lower = c(ci_b0$percent[4], ci_b1$percent[4],
+               ci_b2$percent[4], ci_b3$percent[4]),
+  CI_upper = c(ci_b0$percent[5], ci_b1$percent[5],
+               ci_b2$percent[5], ci_b3$percent[5])
 )
 boot_summary
-
-# ── 전체 계수 시각화 (한번에) ─────────────────────────────────
-boot.df.all <- data.frame(
-  coef = c(boot.result$t[,1], boot.result$t[,2],
-           boot.result$t[,3], boot.result$t[,4]),
-  term = rep(c("β₀ Intercept",
-               "β₁ YardType",
-               "β₂ TRNSPD",
-               "β₃ YardType:TRNSPD"), each=1000)
-)
-
-ggplot(boot.df.all, aes(x=coef)) +
-  geom_histogram(bins=50, fill="steelblue", alpha=0.7) +
-  geom_vline(xintercept=0, color="red", linetype="dashed") +
-  facet_wrap(~term, scales="free") +
-  labs(title="Bootstrap Distribution: All Coefficients",
-       subtitle="Red=0",
-       x="Coefficient", y="Count") +
-  theme_bw()
 ```
 전체 모델 : Ytransform = B0 + B1 * (TYPTRK_GRPYardType) + B2 * (TRNSPD) + B3 * (TYPTRK_GRPYardType:TRNSPD)
 H0 : B3 = 0
 B3만 기각 불가 -> 
 "Box-Cox 변환 모델에서 TYPTRK_GRP(β₁)와 TRNSPD(β₂)는 Bootstrap 95% CI가 0을 포함하지 않아 유의하였으나, 핵심 가설인 교호작용 계수 β₃의 95% CI는 (-0.0016, 0.0058)로 0을 포함하여 귀무가설을 기각하지 못하였다. 즉, 현재 데이터로는 YardType과 OpenLine 간 속도의 영향력 차이를 통계적으로 입증하기 어렵다."
+
+
+Interaction plot (시각적):
+YardType → 기울기 가파름 → 차이 있어 보임
+
+Bootstrap (통계적):
+β₃ CI (-0.0016, 0.0058) → 0 포함 → 차이 없음
+
+차이가 생긴 진짜 이유
+외삽(extrapolation) 문제:
+OpenLine:  TRNSPD 0~130mph  (넓은 범위)
+YardType:  TRNSPD 0~61mph   (좁은 범위)
+geom_smooth(method="lm")은
+YardType의 0~61mph 데이터로
+기울기를 추정한 뒤 그래프를 그림
+
+→ 데이터 범위가 좁으니
+  소수 극단값에 기울기가 민감하게 반응
+→ 시각적으로 가팔라 보이지만
+  통계적 불확실성이 매우 큼
+
 ```{r}
+# forward selection
+# ── Forward Selection (Second-order 포함) ────────────────────
 
-# ── Step 6: 통제변수 추가 탐색 ───────────────────────────────
-# 변환된 Y로 더 풍부한 모델 시도
-cas.lm5 <- lm(log(Casualties) ~ TYPTRK_GRP * TRNSPD
-              + Cause,
-              data = df_casualties)
-summary(cas.lm5)
+# 가장 작은 모델
+cas.lm.null <- lm((Casualties^L-1)/L ~ 1,
+                  data=df_casualties)
 
-cas.lm6 <- lm(log(Casualties) ~ TYPTRK_GRP * TRNSPD
-              + Cause + PASSTRN,
-              data = df_casualties)
-summary(cas.lm6)
+# 가장 큰 모델 (second-order 포함)
+cas.lm.full <- lm((Casualties^L-1)/L ~ 
+                    TYPTRK_GRP * TRNSPD +
+                    I(TRNSPD^2) +
+                    Cause + TYPE + PASSTRN + TONS + TEMP,
+                  data=df_casualties)
 
-# ── Step 7: Stepwise로 최적 변수 선택 ───────────────────────
-cas.lm6.step <- step(cas.lm6, trace=T)
-summary(cas.lm6.step)
-
-# ── Step 8: 모델 비교 ────────────────────────────────────────
-# AIC
-AIC(cas.lm4, cas.lm5, cas.lm6, cas.lm6.step)
-
-# Adjusted R²
-summary(cas.lm4)$adj.r.squared
-summary(cas.lm5)$adj.r.squared
-summary(cas.lm6)$adj.r.squared
-summary(cas.lm6.step)$adj.r.squared
-
-# Partial F-test (nested 모델 비교)
-anova(cas.lm4, cas.lm5)  # Cause 추가 효과
-anova(cas.lm5, cas.lm6)  # PASSTRN 추가 효과
-
-# ── Step 9: Test set으로 최종 검증 ──────────────────────────
-source("TestSet.R")
-
-pmse_lm4 <- NULL
-pmse_step <- NULL
-
-for(i in 1:20){
-  test.size <- 1/3
-  cas.data <- test.set(df_casualties, test.size)
-
-  lm4.train <- lm(log(Casualties) ~ TYPTRK_GRP * TRNSPD,
-                  data=cas.data$train)
-  step.train <- lm(formula(cas.lm6.step),
-                   data=cas.data$train)
-
-  lm4.pred  <- predict(lm4.train,  newdata=cas.data$test)
-  step.pred <- predict(step.train, newdata=cas.data$test)
-
-  pmse_lm4  <- c(pmse_lm4,  mse(lm4.pred,
-                                 log(cas.data$test$Casualties)))
-  pmse_step <- c(pmse_step, mse(step.pred,
-                                log(cas.data$test$Casualties)))
-}
-
-# PMSE 비교
-t.test(pmse_lm4, pmse_step, paired=T)
-
-# 시각화
-Index <- 1:20
-df_pmse <- data.frame(Index, pmse_lm4, pmse_step)
-ggplot(df_pmse, aes(x=Index)) +
-  geom_line(aes(y=pmse_lm4),  color="blue", size=1) +
-  geom_line(aes(y=pmse_step), color="red",
-            linetype="twodash", size=1) +
-  labs(title="Model Comparison: PMSE over 20 runs",
-       y="PMSE") +
-  theme_bw()
+# Forward Selection
+cas.lm.forward <- step(cas.lm.null,
+                       scope=list(lower=cas.lm.null,
+                                  upper=cas.lm.full),
+                       direction="forward",
+                       trace=T)
 ```
 
+-> 교호작용 텀(TYPTRK_GRP:TRNSPD)이 최종 모델에 포함되지 않았다.
+TYPTRK_GRP (main effect): 포함됨 ✅
+TRNSPD (main effect):     포함됨 ✅
+TYPTRK_GRP:TRNSPD:        포함 안 됨 ❌
+즉 Forward Selection도 Bootstrap과 같은 결론이에요:
+
+"선로 종류와 속도 각각은 사상자에 영향을 미치지만, 
+두 변수의 교호작용은 통계적으로 유의하지 않다."
+
+```{r}
+summary(cas.lm.forward)
+
+# cas.lm3와 비교
+AIC(cas.lm3, cas.lm.forward)
+
+# 진단 플롯
+autoplot(cas.lm.forward, which=c(1,2,3,5),
+         ncol=2, label.size=3) +
+  theme_bw() +
+  ggtitle("Forward Selection Final Model")
+
+# VIF
+library(car)
+vif(cas.lm.forward)
+```
+"Forward Selection의 후보 변수로 사고 원인(Cause), 사고 유형(TYPE), 열차 종류(PASSTRN), 열차 중량(TONS), 기온(TEMP)을 포함하였다. 이는 각 변수가 사상자 발생에 이론적으로 영향을 미칠 수 있으며, FRA 데이터에서 실제로 측정된 변수이기 때문이다. Forward Selection을 통해 AIC 기준으로 실제로 설명력을 추가하는 변수만 최종 모델에 포함하였다."
+
+cas.lm3:       AIC =  58.53  (변수 5개)
+cas.lm.forward: AIC = -251.09 (변수 23개) ← 압도적으로 좋음
+
+cas.lm3:        Adj R² = 0.020
+cas.lm.forward: Adj R² = 0.098  ← 5배 향상!
+
+PASSTRN    ✅ 유의
+TYPE       ✅ 일부 레벨 유의
+TYPTRK_GRP ✅ p < 0.001 ***  ← 우리 가설 변수
+TEMP       ✅ p < 0.001 ***
+TRNSPD     ✅ p < 0.001 ***  ← 우리 가설 변수
+I(TRNSPD²) ✅ p < 0.001 ***  ← 비선형 관계 확인!
+Cause      ⚠️ 대부분 비유의
+
+
+결론 : 
+cas.lm2: 변환 전, 교호작용 p=0.026 (유의)
+#cas.lm3: Box-Cox 변환 후, 교호작용 p=0.111 (비유의)
+#Bootstrap: 95% CI (-0.0016, 0.0058), 0 포함 (비유의)
+#Forward Selection: 교호작용 포함 안 됨 (비유의)
+
+3가지 방법 모두 같은 결론 → H₀ 기각 못함
+robust한 분석
