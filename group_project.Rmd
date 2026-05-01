@@ -371,6 +371,30 @@ TRNSPD:      p < 0.001 ***  ← 변환 후 더 유의해짐!
 변환 후: 교호작용 비유의 (p=0.111), R²=0.020
 변환 전 교호작용이 유의했던 건 극단값(1001명 등)이 만들어낸 허상이었을 가능성이 있어요. 
 변환 후가 더 신뢰할 수 있는 결과예요.
+```{r}
+# ── Second-order 모델 ─────────────────────────────────────────
+cas.lm3.so <- lm((Casualties^L-1)/L ~ 
+                   TYPTRK_GRP * TRNSPD + I(TRNSPD^2),
+                 data=df_casualties)
+summary(cas.lm3.so)
+
+# cas.lm3 vs cas.lm3.so 비교
+AIC(cas.lm3, cas.lm3.so)
+anova(cas.lm3, cas.lm3.so)  # I(TRNSPD²) 추가 효과
+
+# 진단 플롯
+autoplot(cas.lm3.so, which=c(1,2,3,5),
+         ncol=2, label.size=3) +
+  theme_bw() + ggtitle("Second-order Model")
+
+# VIF 확인
+vif(cas.lm3.so)
+```
+① AIC 개선 (58.53 → 55.15)
+② β₃ 다시 유의 (p=0.029)
+③ Partial F-test 유의 (p=0.020)
+④ 속도-사상자 비선형 관계 발견
+-> second order 넣는게 낫다.
 
 ```{r}
 library(boot)
