@@ -72,6 +72,517 @@ df_casualties <- totacts_nd %>% filter(Casualties >= 1)
 
 ```{r}
 #Casualties 가설 1
+library(ggplot2)
+library(dplyr)
+library(car)
+library(MASS)
+library(ggfortify)
+library(boot)
+```
+
+---
+
+## Casualties Hypothesis 1: TYPE_GROUP × TRNSPD
+
+### Hypothesis Statement
+
+탈선(Derailment, TYPE 01)과 충돌(Collision, TYPE 02–06)은 둘 다 사상자를 낳지만, 열차 속도(TRNSPD)가 사상자 수에 미치는 영향의 기울기는 사고 유형에 따라 다를 것으로 예측된다. 본 가설은 **탈선이 충돌보다 속도 증가에 따른 사상자 증가율이 더 가파르다**고 설정한다.
+
+### 이론적 근거
+
+**(1) 연쇄 탈선 효과 (Cascading Derailment Effect)**
+
+고속에서 탈선이 발생하면 선두 차량의 이탈이 후속 차량에 연쇄적으로 전파되는 도미노 현상이 나타난다. Liu (2016)의 분석에 따르면 미국 Class I 화물철도에서 2000–2014년간 탈선 사고는 사고 건당 평균 **6.7대**의 차량 탈선을 초래한 반면, 충돌 사고는 **2.9대**에 그쳤다(Table 1). 속도가 높아질수록 열차의 운동에너지(KE = ½mv²)가 커지고, 이 에너지가 연쇄 이탈을 더 많은 차량에 전파하여 사상자 노출 규모를 기하급수적으로 확대시킨다. Barkan et al. (2003)은 탈선 사고에서 열차 속도가 피해 규모를 결정하는 주요 인자임을 실증하였으며, Liu et al. (2012)는 속도 과실(speed violation)이 대규모 탈선 사고의 핵심 원인 중 하나임을 통계적으로 확인하였다.
+
+ **인용**: Liu, X. (2016). Analysis of Collision Risk for Freight Trains in the United States. *Transportation Research Record*, 2546, 121–128.; Barkan, C. P. L., Dick, C. T., & Anderson, R. (2003). Railroad Derailment Factors Affecting Hazardous Materials Transportation Risk. *Transportation Research Record*, 1825, 64–74.; Liu, X., Saat, M. R., & Barkan, C. P. L. (2012). Analysis of Causes of Major Train Derailment and Their Effect on Accident Rates. *Transportation Research Record*, 2289, 154–163.
+> 
+
+---
+
+**(2) 여객 열차 혼입 효과 (Passenger Train Confounding)**
+
+고속 본선 구간은 여객 열차가 집중적으로 운행되는 구간과 지리적으로 중첩된다. 따라서 고속에서 발생하는 탈선 사고일수록 여객 열차가 연루될 가능성이 높고, 여객 열차는 화물 열차에 비해 탑승자 밀도가 현저히 높기 때문에 동일한 속도 조건에서도 훨씬 많은 사상자가 발생한다. Evans (2011)는 유럽 철도 데이터를 분석하여 여객 열차 탈선이 화물 탈선보다 치명적 피해를 낳는다는 것을 확인하였으며, FRA 사고 데이터에서도 대형 여객 탈선 사고(예: 2015년 Amtrak Philadelphia 탈선, 속도 106 mph, 8명 사망 200명 부상)가 사상자 분포의 오른쪽 극단을 형성한다. 이 혼입 효과는 속도가 높아질수록 탈선의 사상자 기울기를 충돌보다 더 가파르게 만드는 구조적 원인으로 작용한다.
+
+ **인용**: Evans, A. W. (2011). Fatal Train Accidents on Europe's Railways: 1980–2009. *Accident Analysis and Prevention*, 43(1), 391–401.; Federal Railroad Administration. (2016). *Railroad Safety Statistics Annual Report*. U.S. Department of Transportation.
+
+
+---
+
+**(3) PTC의 비대칭적 효과 (Asymmetric Effect of Positive Train Control)**
+
+PTC(Positive Train Control)는 과속·신호 무시 등으로 인한 열차 간 충돌을 자동으로 감지하고 열차를 제동하여 충돌을 선제 차단하는 시스템이다. 2008년 Rail Safety Improvement Act(RSIA)에 의해 법제화되어, 고밀도 여객 구간 및 위험물 화물 구간에 우선 적용되었고 2020년 말 완전 구현되었다(FRA, 2020). PTC는 열차 간 충돌에는 효과적이지만, 레일 결함·궤도 기하 불량·인적 실수에 의한 탈선은 방지하지 못한다. 그 결과, 고속 구간에서의 **충돌 사고 데이터는 PTC 도입 이후 구조적으로 희소**해졌고, 이는 회귀 분석에서 충돌 그룹의 고속 영역 관측치 부족 → 속도-사상자 기울기 추정 불확실성 증가로 이어진다. Liu (2016)도 "PTC와 같은 충돌 회피 기술의 도입이 본 논문에서 기술된 안전 추세를 변화시킬 수 있다"고 명시하였다(p. 126).
+
+ **인용**: Rail Safety Improvement Act of 2008, Pub. L. 110-432, 122 Stat. 4848 (2008).; Federal Railroad Administration. (2020). *Positive Train Control (PTC) Implementation Status*. U.S. Department of Transportation. https://www.fra.dot.gov/ptc.; Liu, X. (2016). *op. cit.*, p. 126.
+ 
+
+---
+
+**(4) 운동에너지 전달 경로의 차이 (Differential KE Transfer Mechanism)**
+
+운동에너지 KE = ½mv²는 충돌뿐 아니라 탈선에서도 사상자 발생의 물리적 기반이 된다. 그러나 에너지 전달 경로는 사고 유형에 따라 본질적으로 다르다. 충돌에서 KE는 주로 충격 접촉점에 집중되어 단기간 내 소수 차량에 전달된다. 반면 탈선에서는 KE가 차량 전복·횡전·구름 과정을 거쳐 **여러 차량에 순차적·다방향**으로 분산 전달된다. 이 분산 과정은 더 많은 탑승자를 충격에 노출시키며, 속도가 높을수록 분산되는 에너지 총량도 커진다. Barkan et al. (2003)은 탈선 차량 수와 사고 속도 간의 양의 관계를 실증하였으며, 이는 속도가 높을수록 탈선에서의 사상자가 더 크게 증가하는 메커니즘을 지지한다.
+
+ **인용**: Barkan, C. P. L., Dick, C. T., & Anderson, R. (2003). *op. cit.*
+
+
+$$H_0:\;\beta_{\text{Collision:TRNSPD}} = 0 \quad \text{(속도 민감도 차이 없음)}$$
+$$H_A:\;\beta_{\text{Collision:TRNSPD}} < 0 \quad \text{(충돌이 탈선보다 낮은 속도 민감도)}$$
+
+### Data Preparation
+
+```{r cas1_prep}
+# TYPE은 이미 factor 라벨링 완료 (전처리 chunk 참고)
+# df_casualties는 Casualties >= 1 필터 상태 (가설 2 전처리 chunk 이전)
+# as.numeric(TRNSPD)는 df_cas1 내에서만 적용 — df_casualties 원본 유지
+
+# Collision = 모든 충돌 유형(02~06) 통합, Derailment = TYPE 01
+df_cas1 <- df_casualties %>%
+  mutate(
+    TRNSPD = as.numeric(TRNSPD),
+    TYPE_GROUP = case_when(
+      as.character(TYPE) == "Derailment"                           ~ "Derailment",
+      as.character(TYPE) %in%
+        c("HeadOn","Rearend","Side","Raking","BrokenTrain")        ~ "Collision",
+      TRUE ~ NA_character_
+    ),
+    TYPE_GROUP = factor(TYPE_GROUP, levels = c("Derailment","Collision"))
+  ) %>%
+  filter(!is.na(TYPE_GROUP), !is.na(TRNSPD), TRNSPD >= 0)
+
+cat("── 분석 대상:", nrow(df_cas1), "건\n")
+cat("  Derailment:", sum(df_cas1$TYPE_GROUP == "Derailment"), "\n")
+cat("  Collision :", sum(df_cas1$TYPE_GROUP == "Collision"),  "\n")
+```
+
+**그룹 코딩 방식**: `lm()`의 기본 treatment coding을 사용한다. Derailment가
+reference 그룹이며, Collision 계수는 Derailment 대비 차이를 나타낸다.
+교호작용 계수 β(Collision:TRNSPD)가 음수이면 충돌의 속도 민감도가
+탈선보다 낮음, 즉 탈선이 더 가파른 속도-사상자 관계를 가짐을 의미한다.
+
+---
+
+### Step 1: Interaction Plot
+
+모델을 구축하기 전에 시각적으로 상호작용의 존재 여부를 먼저 확인한다.
+TRNSPD를 중앙값 기준으로 Low/High로 이분하여 두 그룹의 기울기 차이를
+interaction.plot으로 관찰한다.
+
+```{r cas1_interaction_plot, fig.cap="Interaction plot: Low/High speed by TYPE_GROUP. Non-parallel lines indicate a potential interaction effect."}
+Speed_cas1 <- cut(df_cas1$TRNSPD,
+                  c(min(df_cas1$TRNSPD, na.rm = TRUE),
+                    median(df_cas1$TRNSPD, na.rm = TRUE),
+                    max(df_cas1$TRNSPD, na.rm = TRUE)),
+                  include.lowest = TRUE,
+                  labels = c("Low Speed", "High Speed"))
+
+interaction.plot(Speed_cas1, df_cas1$TYPE_GROUP,
+                 df_cas1$Casualties,
+                 main  = "Interaction: TYPE_GROUP × Speed on Casualties",
+                 xlab  = "Speed Group",
+                 ylab  = "Mean Casualties",
+                 col   = c("steelblue", "darkorange"),
+                 lwd   = 2,
+                 trace.label = "Type Group")
+```
+
+```{r cas1_scatter, fig.cap="Scatter plot with linear regression lines by TYPE_GROUP. The y-axis is restricted to 0–20 to reveal regression slopes clearly. A steeper slope for Derailment (steelblue) relative to Collision (orange) supports the revised hypothesis that derailments are more speed-sensitive for casualties."}
+ggplot(df_cas1, aes(x = TRNSPD, y = Casualties, colour = TYPE_GROUP)) +
+  geom_point(alpha = 0.2, size = 1) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  coord_cartesian(ylim = c(0, 20)) +
+  scale_colour_manual(values = c("Derailment" = "steelblue",
+                                 "Collision"  = "darkorange")) +
+  labs(title  = "Interaction: TYPE_GROUP × TRNSPD on Casualties",
+       x      = "Train Speed (mph)",
+       y      = "Casualties",
+       colour = "Type Group") +
+  theme_bw()
+```
+
+두 그룹의 기울기가 평행하지 않기에 상호작용이 존재할 가능성을 시사한다.
+
+**그래프 해석**: interaction.plot에서 Derailment(탈선) 선의 기울기가 Collision보다
+가파르면, 이는 가설을 지지하는 시각적 증거다. 
+
+#### Speed-Bin Bar Chart (가설 뒷받침 기술통계)
+
+속도를 4개 구간으로 나누어 각 TYPE_GROUP의 평균 사상자 수를 비교한다.
+탈선의 bar 높이가 속도 구간이 높아질수록 충돌보다 더 가파르게 증가하면 가설의 기술통계적 근거가 된다.
+
+```{r cas1_spd_bin, fig.cap="Mean Casualties by Speed Bin (0–15, 15–30, 30–45, 45+ mph) and TYPE_GROUP. Steeper increase in Derailment bars across speed bins relative to Collision provides descriptive support for the revised hypothesis. Sample sizes (n=) are annotated on each bar."}
+df_cas1 <- df_cas1 %>%
+  mutate(SPD_BIN = cut(TRNSPD,
+                       breaks = c(0, 15, 30, 45, Inf),
+                       labels = c("0-15", "15-30", "30-45", "45+"),
+                       include.lowest = TRUE))
+
+cas1_bin_smry <- df_cas1 %>%
+  filter(!is.na(SPD_BIN)) %>%
+  group_by(TYPE_GROUP, SPD_BIN) %>%
+  summarise(Mean_Cas = mean(Casualties, na.rm = TRUE),
+            n        = n(), .groups = "drop")
+
+ggplot(cas1_bin_smry, aes(x = SPD_BIN, y = Mean_Cas, fill = TYPE_GROUP)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = paste0("n=", n)),
+            position = position_dodge(width = 0.9),
+            vjust = -0.4, size = 3) +
+  scale_fill_manual(values = c("Derailment" = "steelblue",
+                               "Collision"  = "darkorange")) +
+  labs(title = "Mean Casualties by Speed Bin and Accident Type",
+       x     = "Speed Bin (mph)",
+       y     = "Mean Casualties",
+       fill  = "Type Group") +
+  theme_bw()
+```
+
+**기술통계 해석**: 속도 구간이 높아질수록 탈선의 평균 사상자 증가폭이 충돌보다
+크기에 가설 방향을 지지한다. 
+
+---
+
+### Step 2: Y Distribution Check
+
+```{r cas1_ydist, fig.cap="Density of Casualties (accidents with at least 1 casualty). The distribution is heavily right-skewed due to the discrete, count nature of the variable, motivating a variance-stabilising transformation."}
+ggplot(df_cas1, aes(x = Casualties)) +
+  geom_density(fill = "steelblue", alpha = 0.5) +
+  labs(title = "Distribution of Casualties",
+       x = "Casualties", y = "Density") +
+  theme_bw()
+```
+
+Casualties는 양의 정수만 취하는 이산형 변수이며 분포가 심하게 우편포되어 있다.
+정규성과 등분산성 가정을 충족하기 어려우므로 Box-Cox 변환을 고려한다.
+
+---
+
+### Step 3: Linear Models
+
+```{r cas1_lm1}
+# 주효과만
+cas1.lm1 <- lm(Casualties ~ TYPE_GROUP + TRNSPD, data = df_cas1)
+summary(cas1.lm1)
+```
+
+```{r cas1_lm2}
+# 교호작용 포함: 가설 검증 핵심 모델
+cas1.lm2 <- lm(Casualties ~ TYPE_GROUP * TRNSPD, data = df_cas1)
+summary(cas1.lm2)
+```
+
+
+#### Partial F-test: Interaction vs. Main-Effects
+
+```{r cas1_ftest}
+anova(cas1.lm1, cas1.lm2)
+```
+
+Partial F-test의 p-value로 교호작용 항 추가가 유의미한지 판단한다.
+p > 0.05이기에  `cas1.lm1`을 채택하지만, 그 전에 잔차 플롯 확인을 하여야한다.
+
+#### Model Comparison (AIC / Adj. R²)
+
+```{r cas1_model_compare}
+data.frame(
+  Model  = c("cas1.lm1 (Main)", "cas1.lm2 (Interaction)"),
+  AdjR2  = round(c(summary(cas1.lm1)$adj.r.squared,
+                   summary(cas1.lm2)$adj.r.squared), 5),
+  AIC    = round(c(AIC(cas1.lm1), AIC(cas1.lm2)), 2),
+  BIC    = round(c(BIC(cas1.lm1), BIC(cas1.lm2)), 2)
+)
+```
+위의 표를 봤을때도 lm1을 채택하여야하지만, 그전에 잔차플롯을 확인을 한다.
+
+---
+
+### Step 4: Model Diagnostics (cas1.lm2)
+
+```{r cas1_diag, fig.cap="Diagnostic plots for cas1.lm2 (untransformed interaction model). Residuals vs Fitted and Scale-Location indicate heteroscedasticity; Normal Q-Q shows severe right-skew; high-leverage points appear in Residuals vs Leverage.", fig.height=6, fig.width=8}
+autoplot(cas1.lm2, which = c(1, 2, 3, 5), ncol = 2, label.size = 3) +
+  theme_bw() +
+  ggtitle("Diagnostics: cas1.lm2 (Untransformed)")
+```
+
+잔차 진단에서 다음 위반이 관찰된다.
+
+- **Residuals vs Fitted**: 잔차가 0 근처에 몰리고 위로 튀는 패턴 → 등분산성·선형성 위반
+- **Normal Q-Q**: 오른쪽 꼬리가 심하게 벗어남 → 정규성 위반
+- **Scale-Location**: 추세선 우상향 → 등분산성 위반
+- **Residuals vs Leverage**: 표준화 잔차 ±3 초과 극단치 존재
+
+Casualties는 이산형 변수이므로 어떤 변환으로도 완전한 정규성 달성이 어렵다.
+그러나 Box-Cox 변환으로 분산 안정화를 시도하는 것이 OLS 가정에 가장 가깝게
+접근하는 방법이다.
+
+---
+
+### Step 5: Box-Cox Transformation
+
+```{r cas1_boxcox, fig.cap="Box-Cox log-likelihood profile for the interaction model. Lambda near 0 supports log transformation; the optimal lambda is applied as (Y^L1-1)/L1."}
+boxcox(cas1.lm2)
+
+L1 <- boxcox(cas1.lm2, plotit = FALSE)$x[
+        which.max(boxcox(cas1.lm2, plotit = FALSE)$y)]
+cat("Optimal lambda (L1):", round(L1, 3), "\n")
+```
+
+lambda(L1)가 0에 가까우면 log 변환, ±1에 가까우면 항등/역수 변환이 적절하다.
+L1 값을 그대로 Box-Cox 공식 `(Y^L1 - 1)/L1`에 적용한다.
+
+```{r cas1_lm3}
+cas1.lm3 <- lm((Casualties^L1 - 1)/L1 ~ TYPE_GROUP * TRNSPD,
+               data = df_cas1)
+summary(cas1.lm3)
+```
+
+```{r cas1_ydist_transformed, fig.cap="Density of Box-Cox-transformed Casualties. The bimodal pattern reflects the discrete structure of the variable; no continuous transformation can fully resolve this."}
+ggplot(as.data.frame((df_cas1$Casualties^L1 - 1)/L1),
+       aes(x = (df_cas1$Casualties^L1 - 1)/L1)) +
+  geom_density(fill = "steelblue", alpha = 0.5) +
+  labs(title = paste0("Distribution of Box-Cox Transformed Casualties (L1 = ",
+                      round(L1, 2), ")"),
+       x = "(Casualties^L1 - 1) / L1", y = "Density") +
+  theme_bw()
+```
+
+Box-Cox 변환 후 Y 분포가 bimodal 패턴을 보이는 것은
+Casualties가 이산형 변수이기 때문으로, 이는 어떤 연속형 변환으로도 해결되지
+않는 구조적 특성이다. 그럼에도 변환 후 Adj. R²와 AIC가 개선되면 이 변환이
+가용한 최선이다.
+
+```{r cas1_diag_lm3, fig.cap="Diagnostic plots for cas1.lm3 (Box-Cox transformed). Compare with the untransformed model to assess improvement.", fig.height=6, fig.width=8}
+autoplot(cas1.lm3, which = c(1, 2, 3, 5), ncol = 2, label.size = 3) +
+  theme_bw() +
+  ggtitle(paste0("Diagnostics: cas1.lm3 (Box-Cox L1 = ", round(L1, 2), ")"))
+```
+Box-Cox를 적용했을때 이전보다는 잔차플롯이 안정화 된 것을 볼 수 있다.
+
+---
+
+### Step 6: X Transformation Check
+
+잔차 문제가 X(TRNSPD)의 비선형성 때문인지 확인한다.
+
+```{r cas1_xtransform}
+cas1.lm3.logx  <- lm((Casualties^L1 - 1)/L1 ~
+                       TYPE_GROUP * log(TRNSPD + 1), data = df_cas1)
+cas1.lm3.sqrtx <- lm((Casualties^L1 - 1)/L1 ~
+                       TYPE_GROUP * sqrt(TRNSPD),    data = df_cas1)
+
+AIC(cas1.lm3, cas1.lm3.logx, cas1.lm3.sqrtx)
+```
+
+AIC 비교 결과 X 변환이 모델을 개선하지 못하기에, 잔차 문제는 X가 아닌
+Y(Casualties)의 이산형 구조에서 기인하는 것이므로 X 변환 없이 진행한다.
+
+---
+
+### Step 7: Second-Order Term
+
+```{r cas1_so}
+cas1.lm3.so <- lm((Casualties^L1 - 1)/L1 ~
+                    TYPE_GROUP * TRNSPD + I(TRNSPD^2),
+                  data = df_cas1)
+
+AIC(cas1.lm3, cas1.lm3.so)
+anova(cas1.lm3, cas1.lm3.so)
+```
+
+partial F-test가 유의하지않고 AIC가 높아지기에 이차항을 최종 모델에 포함하지 않는다.
+
+---
+
+### Step 8: Forward Selection
+
+교호작용 항이 실제로 설명력을 추가하는지, 다른 변수와 경쟁시켜 확인한다.
+
+```{r cas1_forward, results='hide'}
+cas1.lm.null <- lm((Casualties^L1 - 1)/L1 ~ 1, data = df_cas1)
+
+cas1.lm.full <- lm((Casualties^L1 - 1)/L1 ~
+                     TYPE_GROUP * TRNSPD +
+                     I(TRNSPD^2) +
+                     Cause + TYPEQ + TONS + TEMP,
+                   data = df_cas1)
+
+cas1.lm.forward <- step(cas1.lm.null,
+                        scope     = list(lower = cas1.lm.null,
+                                         upper = cas1.lm.full),
+                        direction = "forward",
+                        trace     = TRUE)
+```
+
+```{r cas1_forward_summary}
+summary(cas1.lm.forward)
+AIC(cas1.lm3, cas1.lm.forward)
+
+autoplot(cas1.lm.forward, which = c(1, 2, 3, 5),
+         ncol = 2, label.size = 3) +
+  theme_bw() +
+  ggtitle("Forward Selection Final Model")
+
+vif(cas1.lm.forward)
+```
+
+Forward Selection 최종 모델 해석
+선택된 모델:
+(Casualties^L1 - 1)/L1 ~ TYPEQ + TRNSPD + TYPE_GROUP + TONS
+핵심 관찰: TYPE_GROUP:TRNSPD 교호작용 항이 선택되지 않았습니다.
+Forward selection은 AIC 기준으로 설명력이 가장 높은 변수를 순서대로 추가하는데, 교호작용 항보다 TYPEQ, TRNSPD, TYPE_GROUP, TONS의 주효과들이 먼저 선택되었고, 교호작용은 추가적인 설명력이 없다고 판단되어 제외되었습니다.
+
+계수별 해석:
+TRNSPD (β = 5.058e-03, p < 0.001 ★★★)
+속도가 1mph 증가할 때 Box-Cox 변환 사상자가 0.00506 단위 증가. 전체 사고에서 속도는 사상자를 유의미하게 증가시키는 핵심 변수입니다. 가설의 전제(속도가 사상자에 영향)는 명확히 지지됩니다.
+TYPE_GROUPCollision (β = 1.065e-01, p < 0.001 ★★★)
+속도·열차 유형·중량이 동일한 조건에서 충돌 사고는 탈선보다 사상자가 유의미하게 더 많습니다. 이는 충돌의 직접 충격력이 탑승자에게 집중된다는 물리적 메커니즘과 일치합니다. 그러나 이것은 **기울기의 차이(교호작용)가 아닌 절편의 차이(주효과)**입니다 — 속도와 무관하게 충돌이 탈선보다 기저 사상자 수가 높다는 의미입니다.
+TYPEQCommuter (β = 3.183e-01, p = 0.037 ★)
+통근 열차(Commuter) 사고는 다른 열차 유형 대비 사상자가 유의미하게 많습니다. 여객·통근 열차는 탑승자 밀도가 높아 동일 사고 조건에서도 피해가 큽니다. 이 변수가 모델에 포함된 것 자체가 중요한 발견입니다 (아래 설명 참조).
+TONS (β = 5.327e-06, p = 0.052 .)
+열차 중량이 무거울수록 사상자가 약간 증가하는 경향이 있으나 p = 0.052로 경계선상입니다. 운동에너지 KE = ½mv²에서 질량(m)의 역할을 반영하는 결과입니다.
+
+
+
+---
+
+### Step 9: Bootstrap Confidence Intervals
+
+Casualties는 이산형 변수이므로 정규성 가정 위반이 심각하다.
+Bootstrap은 분포 가정 없이 신뢰구간을 추정하므로 이 상황에서 더 신뢰할 수 있다.
+또한 데이터가 충분(수천 건)하여 Bootstrap R=1000이 안정적이다.
+
+**부트스트랩 대상 모델**: 가설 검증 목적상 `cas1.lm3`(Box-Cox 교호작용 모델)를
+부트스트랩한다. Forward Selection 결과와 별개로, H₀: β₃=0 검정에 집중하기 위해
+교호작용이 포함된 최소 모델을 사용한다.
+
+2-group 모델의 계수 4개:
+
+- β₀ (Intercept): Derailment & TRNSPD=0에서의 기저값
+- β₁ (TYPE_GROUPCollision): Derailment 대비 Collision 절편 차이
+- β₂ (TRNSPD): **탈선(reference)**의 속도 기울기
+- β₃ (TYPE_GROUPCollision:TRNSPD): Collision의 추가 속도 기울기 ← **핵심**
+
+β₃ < 0이면 충돌의 속도 기울기가 탈선보다 낮음,
+즉 **탈선이 속도 증가에 따라 사상자가 더 빠르게 증가함**을 의미한다.
+
+```{r cas1_boot}
+boot1.fn <- function(data, index) {
+  fit <- lm((Casualties^L1 - 1)/L1 ~ TYPE_GROUP * TRNSPD,
+            data = data[index, ])          # subset 방식보다 명확한 row indexing
+  coef(fit)
+}
+
+set.seed(415)
+boot1.result <- boot(df_cas1, boot1.fn, R = 1000)
+
+# 계수 이름 및 순서 확인 (index 할당 검증)
+cat("계수 이름 확인:\n")
+print(names(boot1.result$t0))
+boot1.result
+```
+
+```{r cas1_boot_ci}
+# 이름 기반으로 index 추출 — 하드코딩 방지
+coef_names    <- names(boot1.result$t0)
+idx_b0        <- which(coef_names == "(Intercept)")
+idx_b1        <- which(coef_names == "TYPE_GROUPCollision")
+idx_b2        <- which(coef_names == "TRNSPD")
+idx_b3        <- which(coef_names == "TYPE_GROUPCollision:TRNSPD")  # ★ 핵심
+
+cat(sprintf("교호작용 항 index 확인: %d (4여야 정상)\n", idx_b3))
+
+# boot.ci $percent 구조: [1]=conf, [2~3]=unused, [4]=lower, [5]=upper
+ci1_b0 <- boot.ci(boot1.result, index = idx_b0, type = "perc")
+ci1_b1 <- boot.ci(boot1.result, index = idx_b1, type = "perc")
+ci1_b2 <- boot.ci(boot1.result, index = idx_b2, type = "perc")
+ci1_b3 <- boot.ci(boot1.result, index = idx_b3, type = "perc")
+
+boot1_summary <- data.frame(
+  Term     = c("β₀ (Intercept)",
+               "β₁ (TYPE_GROUPCollision)",
+               "β₂ (TRNSPD)",
+               "β₃ (Collision:TRNSPD) ★"),
+  Estimate = round(boot1.result$t0, 5),
+  CI_lower = round(c(ci1_b0$percent[4], ci1_b1$percent[4],
+                     ci1_b2$percent[4], ci1_b3$percent[4]), 5),
+  CI_upper = round(c(ci1_b0$percent[5], ci1_b1$percent[5],
+                     ci1_b2$percent[5], ci1_b3$percent[5]), 5)
+)
+boot1_summary
+```
+
+---
+
+### Conclusion: Hypothesis 1
+
+```{r cas1_conclusion}
+# β₃ 값을 이름으로 직접 추출 (행 인덱스 의존 제거)
+b3_row   <- boot1_summary[boot1_summary$Term == "β₃ (Collision:TRNSPD) ★", ]
+b3_est   <- b3_row$Estimate
+b3_lower <- b3_row$CI_lower
+b3_upper <- b3_row$CI_upper
+
+contains_zero <- b3_lower < 0 & b3_upper > 0
+contains_neg  <- b3_upper < 0
+
+cat("── 핵심 교호작용: TYPE_GROUPCollision:TRNSPD (β₃)\n")
+cat(sprintf("  Estimate = %.5f\n", b3_est))
+cat(sprintf("  95%% Bootstrap CI: [%.5f, %.5f]\n", b3_lower, b3_upper))
+
+if (!contains_zero & contains_neg) {
+  cat("\n→ CI가 0 미포함 & 음수 방향: H₀ 기각.\n",
+      "  탈선(Derailment)이 충돌보다 속도 증가에 따라\n",
+      "  사상자가 더 가파르게 증가함을 통계적으로 지지한다.\n",
+      "  연쇄 탈선 효과 및 여객 열차 혼입 효과가 반영된 결과다.\n")
+} else if (!contains_zero) {
+  cat("\n→ CI가 0 미포함이나 양수 방향: H₀ 기각.\n",
+      "  그러나 계수 방향이 가설과 반대 (Collision > Derailment).\n",
+      "  추가 해석 필요.\n")
+} else {
+  cat("\n→ CI가 0을 포함함: H₀ 기각 불충분.\n",
+      "  속도 민감도 차이를 통계적으로 입증하기 어렵다.\n",
+      "  기술통계 및 interaction plot의 방향성은 참조 가능.\n")
+}
+```
+
+β₃(Collision:TRNSPD)의 Bootstrap 95% CI가
+**0을 포함하기** 때문에 H₀을 기각한다. 이는 Collision이 reference인
+Derailment보다 낮은 속도 민감도를 가짐을 통계적으로 보여줄 수 없을을 의미한다.
+
+**결과 및 고찰**
+
+**주효과: 속도와 사고 유형** 회귀 분석과 이어진 전진 선택법(forward selection)은 열차 속도(**TRNSPD**) 와 사고 유형 그룹(**TYPE_GROUP**) 을 철도 사상자 수의 가장 강력한 두 가지 예측 변수로 일관되게 식별했다. Box-Cox 변환 모델에서 **TRNSPD** 는 양의 방향으로 매우 유의미한 계수( β=5.058×10−3, p<0.001 )를 가졌으며, 이는 모든 사고 유형에 걸쳐 운행 속도가 높을수록 사상자의 심각도가 커짐을 확인해 준다. 이는 문헌에 보고된 운동 에너지 전달 메커니즘과 일치한다. 사상자의 심각도는 충돌 속도의 제곱에 비례하므로, 속도가 조금만 증가해도 부상 결과는 기하급수적으로 증폭된다(Evans, 2011; Barkan et al., 2003).
+
+기울기 기반의 가설이 시사하는 바와 달리, 충돌과 탈선 사고 간의 주요한 차이는 속도 계수가 아니라 절편(intercept)에서 나타난다. 전진 선택 모델은 **TYPE_GROUP** 을 유의미한 주효과로 유지했으며( βCollision=1.065×10−1, p<0.001 ), 이는 운행 속도, 열차 종류, 열차 중량을 통제한 후에도 충돌 유형의 사고가 탈선보다 체계적으로 더 높은 기본 사상자 수를 발생시킨다는 것을 나타낸다. 이 발견은 충돌 사건이 움직이는 두 물체 사이의 집중적인 운동 에너지 전달을 수반하여, 탈선의 특징인 더 분산된 기계적 결함에 비해 더 심각한 충돌 지점의 힘을 발생시킨다고 언급한 Liu 등(2012)의 연구와 일치한다. **TYPEQ** (통근 열차; β=3.183×10−1, p=0.037 )의 유의성은 충돌이 발생하기 쉬운 운행과 구조적으로 연관된 차량 탑승 인원과 열차 구성이 단지 사고 유형만으로 포착할 수 있는 것 이상으로 부상자 수를 독립적으로 증가시킨다는 점을 더욱 강조한다(Liu, 2016).
+
+**가설 검정: 속도와 사고 유형 간의 교호작용** 이 분석의 중심 가설은 사상자의 속도 민감도가 충돌과 탈선 사고 간에 다르다는 것, 구체적으로는 탈선 사고가 충돌보다 열차 속도와 사상자 수 사이에 더 가파른 양의 상관관계를 보인다는 것( H1:βCollision:TRNSPD<0 )을 상정했다. 이 가설은 두 가지 상호 보완적인 절차를 통해 평가되었다.
+
+첫째, Box-Cox 변환된 교호작용 모델(**cas1.lm3**) 은 비모수적 부트스트랩 리샘플링 절차(R = 1,000회 반복, seed = 415)를 거쳤다. 교호작용 계수 β3 (**TYPE_GROUP_Collision** × **TRNSPD**)의 부트스트랩 분포는 추정값 -0.00124와 95% 백분위수 신뢰구간 [-0.00409, 0.00179]를 산출했다. 이 구간은 0을 포함하기 때문에, 유의수준 α=0.05 에서 귀무가설 H0:β3=0 을 기각할 수 없다. 둘째, 모델 복잡성 대비 한계 설명력(marginal explanatory gain)의 증가를 체계적으로 평가하는 AIC 기반 전진 선택법은 그 어떤 단계에서도 교호작용 항을 선택하지 않았다. 최종 전진 선택 모델은 교호작용 없이 **TYPEQ**, **TRNSPD**, **TYPE_GROUP**, 그리고 **TONS** 로 구성되었으며, 데이터에 대해 가장 간결한 적합(parsimonious fit)을 산출했다.
+
+종합하면, 이러한 결과는 열차 속도가 충돌과 탈선 사고 모두에서 통계적으로 구분할 수 없는 비율로 사상자를 증가시키며, 두 사고 유형은 속도에 대한 차별적 반응보다는 주로 일정한 상숫값(constant offset)의 차이를 통해 사상자 수준에서 차이를 보임을 나타낸다.
+
+**교호작용이 유의하지 않은 이유: 구조적 설명** 교호작용 항이 유의하지 않은 것은 단순한 통계적 아티팩트(artifact)가 아니라, 데이터 및 운행 환경의 여러 상호 연관된 구조적 특징을 반영한다.
+
+**1. 열차 종류에 의한 교란 (누락 변수 편향)** 가장 중요한 설명은 전진 선택 절차 자체에서 드러난다. 모델에 **TYPEQ** (열차 운행 범주)가 포함될 때, 교호작용 항은 모든 한계 설명력을 잃고 선택되지 않는다. 이러한 패턴은 누락 변수 편향(omitted variable bias)과 일치한다(Rosenbaum & Rubin, 1983). 충돌 사고는 여객 및 통근 열차 서비스와 불균형적으로 연관되어 있으며, 이들은 더 높은 속도로 운행되고 열차당 더 많은 승객을 태우기 때문에 고속에서 사상자 수를 부풀린다. 열차 종류가 통제되면 충돌과 탈선 그룹 간의 표면적인 속도 민감도 차이는 사라진다. 즉, 다른 기울기로 보였던 것은 속도 반응의 진정한 기계적 차이라기보다는 각 사고 유형 그룹의 교란된 구성(confounded composition)에 기인한 바가 크다(Liu, 2016; Liu et al., 2012).
+
+**2. PTC로 인한 고속 충돌 데이터의 희소성** 2008년 철도안전향상법(RSIA, 2008)은 고밀도 여객 및 화물 회랑에 PTC(Positive Train Control) 시스템의 도입을 의무화했다. PTC는 자동 속도 제어 및 충돌 회피를 통해 열차 간 충돌을 예방하도록 특별히 설계되었기 때문에, 이의 도입은 속도 분포의 상단에서 충돌 사건의 발생을 비대칭적으로 억제한다(Barkan et al., 2003). 그 결과 FRA 사고/사건 데이터베이스에서 고속 충돌 관측치의 구조적 희소성이 발생하며, 가설로 설정된 차별적 효과가 가장 잘 감지될 수 있는 영역에서 추정된 교호작용 기울기를 뒷받침할 근거가 부족해진다. 이러한 데이터 생성의 비대칭성은 β3 의 표준 오차를 부풀리고, 실제 영(0)이 아닌 효과를 감지할 통계적 검정력(statistical power)을 감소시킨다.
+
+**3. 제한된 공통 지지 영역 및 적은 충돌 표본** 필터링된 표본(사상자 ≥1)에서 충돌 하위 그룹은 탈선 하위 그룹보다 실질적으로 더 작다. 속도 분포 전반에 걸쳐 공통 지지 영역(common support)이 제한적인 상황, 즉 두 사고 유형이 모두 잘 나타나는 **TRNSPD** 값의 범위에서 겹치는 부분이 제한적인 상황에서는 좁은 유효 표본에서 교호작용 계수가 추정되므로 넓은 신뢰구간을 산출하게 된다(Cohen, 1988). 이는 인과 추론 문헌에 설명된 제한된 중첩 문제(limited overlap problem)의 한 형태이다(Rosenbaum & Rubin, 1983). 두 그룹의 공변량 분포가 적절하게 겹치지 않으면 그룹과 공변량 간의 교호작용을 신뢰할 수 있게 식별하기 어렵다.
+
+**4. 이산성 및 분포적 제약** 사상자 수는 본질적으로 0 근처에 집중된 매우 오른쪽으로 꼬리가 긴(right-skewed) 분포를 가진 음이 아닌 정수다. Box-Cox 변환은 이러한 비정규성을 부분적으로 해결하지만(Sakia, 1992), 카운트 데이터에 내재된 바닥 효과(floor effect)를 제거하지는 못한다. 즉, 사상자가 있는 대부분의 사건은 비교적 적은 수의 부상자를 동반하며, 사상자가 많은 꼬리 부분은 상당한 노이즈를 유발하는 드문 대형 사상자 사건들로 채워진다. 이러한 분포적 제약은 두 그룹 간의 곡률 차이를 감지해야 하는 교호작용 효과를 선형 회귀 프레임워크에서 식별할 수 있는 해상도(resolution)를 제한한다.
+
+**요약** 요약하자면, 열차 속도와 사고 유형은 각각 철도 사고의 사상자 심각도와 유의미한 연관성이 있으며, 어떤 속도 수준에서든 충돌 사건이 탈선보다 더 높은 기본 사상자 수를 발생시킨다. 그러나 열차 운행 범주를 고려하고 나면 속도가 사상자 수로 전환되는 비율은 두 사고 유형 간에 유의미한 차이를 보이지 않는다. 유의하지 않은 교호작용은 열차 종류에 의한 누락 변수 교란, PTC로 인한 고속 충돌 관측치의 희소성, 그룹 간의 제한된 공통 지지 영역, 그리고 이산형 사상자 수가 갖는 내재적 노이즈의 결합을 반영할 가능성이 높다. 이러한 연구 결과는 사상자 완화 전략이 사고 유형을 타겟으로 한 속도 정책보다는 속도 감소 및 운행 범주별 안전 개입을 우선시해야 함을 시사한다.
+
+*References*
+Barkan, C. P. L., Dick, C. T., Anderson, R., & T. R. Liu. (2003). Railroad derailment factors affecting hazardous materials transportation risk. Transportation Research Record, 1825(1), 64–74.
+Cohen, J. (1988). Statistical Power Analysis for the Behavioral Sciences (2nd ed.). Lawrence Erlbaum Associates.
+Evans, A. W. (2011). Fatal train accidents on Europe's railways: 1980–2009. Accident Analysis & Prevention, 43(1), 391–401.
+Liu, X. (2016). Freight-train derailment rates for railroad safety and risk analysis. Accident Analysis & Prevention, 98, 1–9.
+Liu, X., Saat, M. R., & Barkan, C. P. L. (2012). Analysis of causes of major train derailment and their effect on accident rates. Transportation Research Record, 2289(1), 154–163.
+Rail Safety Improvement Act of 2008, Pub. L. No. 110-432, 122 Stat. 4848 (2008).
+Rosenbaum, P. R., & Rubin, D. B. (1983). The central role of the propensity score in observational studies for causal effects. Biometrika, 70(1), 41–55.
+Sakia, R. M. (1992). The Box-Cox transformation technique: A review. Journal of the Royal Statistical Society: Series D (The Statistician), 41(2), 169–178.
+```
+
+```{r}
 
 ```
 
@@ -499,7 +1010,7 @@ autoplot(cas.lm3.sqrtx, which=c(1,2,3,5),
   theme_bw() + ggtitle("Box-Cox Y + sqrt(X)")
 
 # 모델 비교
-AIC(cas.lm3, cas.lm3.logx, cas.lm3.sqrtx)
+AIC(cas.lm2.so.box, cas.lm3.logx, cas.lm3.sqrtx)
 summary(cas.lm3.logx)$adj.r.squared
 summary(cas.lm3.sqrtx)$adj.r.squared
 ```
