@@ -580,11 +580,7 @@ Liu, X., Saat, M. R., & Barkan, C. P. L. (2012). Analysis of causes of major tra
 Rail Safety Improvement Act of 2008, Pub. L. No. 110-432, 122 Stat. 4848 (2008).
 Rosenbaum, P. R., & Rubin, D. B. (1983). The central role of the propensity score in observational studies for causal effects. Biometrika, 70(1), 41–55.
 Sakia, R. M. (1992). The Box-Cox transformation technique: A review. Journal of the Royal Statistical Society: Series D (The Statistician), 41(2), 169–178.
-```
 
-```{r}
-
-```
 
 ```{r}
 #Casualties 가설 2 후보비교
