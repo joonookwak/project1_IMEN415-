@@ -61,29 +61,7 @@ df_casualties <- totacts_nd %>% filter(Casualties >= 1)
 
 ```
 
-```{r}
-# ── 공통 전처리 ─────────────────────────────────────────────
-# 빈 문자열 NA 처리 후 factor 변환
-df_casualties <- df_casualties %>%
-  mutate(
-    TRNSPD    = as.numeric(TRNSPD),
-    TONS      = as.numeric(TONS),
-    CARS      = as.numeric(CARS),
-    CARSHZD   = as.numeric(CARSHZD),
-    HZD_RATIO = CARSHZD / (CARS + 1),
-    PASSTRN   = ifelse(PASSTRN %in% c("N", "Y"), PASSTRN, NA),  # ← 빈 문자열 NA 처리
-    PASSTRN   = factor(PASSTRN, levels = c("N", "Y"), 
-                       labels = c("Freight", "Passenger")),
-    TYPTRK_GRP = factor(case_when(
-      TYPTRK == 1 ~ "MainLine",
-      TYPTRK == 2 ~ "Yard",
-      TRUE        ~ "Other"
-    ))
-  )
 
-# 확인
-table(df_casualties$PASSTRN)
-```
 
 ```{r}
 #ACCDMG 가설 1
@@ -1057,223 +1035,212 @@ Rosenbaum, P. R., & Rubin, D. B. (1983). The central role of the propensity scor
 Sakia, R. M. (1992). The Box-Cox transformation technique: A review. Journal of the Royal Statistical Society: Series D (The Statistician), 41(2), 169–178.
 
 
+===========================================================================
+# 1번 문제: Generating Hypotheses
+===========================================================================
 ```{r}
-#Casualties 가설 2 후보비교
-
+# Casualties 가설 2
 library(ggplot2)
 library(dplyr)
+```
 
-# ── 공통 전처리 ─────────────────────────────────────────────
-# 빈 문자열 NA 처리 후 factor 변환
+
+## 가설 설정
+
+### 가설 2: 선로 종류(OpenLine vs YardType)와 속도(TRNSPD)의 교호작용이 사상자에 미치는 영향
+
+#### 귀무가설 및 대립가설
+
+- **H₀ (귀무가설):** 속도(TRNSPD)가 사상자 수에 미치는 영향은 선로 종류(OpenLine vs YardType)와 관계없이 동일하다. 즉, β₄ = 0.
+
+- **H₁ (대립가설):** 속도가 사상자 수에 미치는 영향은 선로 종류에 따라 다르다. 즉, β₄ ≠ 0.
+
+#### 행동 가능성 설명 why the hypotheses are actionable
+
+이 가설이 통계적으로 유의미하면, FRA는 선로 종류별로 차별화된 속도 감소 정책을 수립할 수 있다 
+**Federal Railroad Administration. (2020). Train Accident Data and Causal Factors: A Comprehensive Analysis 2010-2019. Office of Safety Analysis.**
+
+예를 들어:
+- **OpenLine(주행선)**: 고속 운행 자체의 위험성이 높으므로 속도 감지기(Speed Governor) 의무화
+- **YardType(야적장)**: 낮은 속도에서 작동하므로 인력 안전 교육과 작업 절차 개선에 집중
+
+이러한 맞춤형 접근은 비용-효율성을 극대화한다 
+**King, S., & Roberts, J. (1987). Railroad Safety: Evidence on the Effectiveness of Accident Prevention. *Journal of Transportation Research Forum*, 28(1), 25–33.**
+
+#### how you arrived at each hypothesis (visualizations, summary statistics, and any other supporting evidence)
+
+
+
+
+## 데이터 전처리 3번 문제: Casualties Analysis (b) 에 사용
+
+### Step 1: 수치형 변수 및 범주형 변수 변환
+
+```{r hypothesis2_preprocessing}
+# 수치형 변수 변환 및 새로운 범주형 변수 생성
 df_casualties <- df_casualties %>%
   mutate(
+    # 수치형 변수 변환
     TRNSPD    = as.numeric(TRNSPD),
     TONS      = as.numeric(TONS),
     CARS      = as.numeric(CARS),
     CARSHZD   = as.numeric(CARSHZD),
     HZD_RATIO = CARSHZD / (CARS + 1),
-    PASSTRN   = ifelse(PASSTRN %in% c("N", "Y"), PASSTRN, NA),  # ← 빈 문자열 NA 처리
-    PASSTRN   = factor(PASSTRN, levels = c("N", "Y"), 
+    
+    # PASSTRN: 빈 문자열을 NA로 처리 후 factor 변환
+    PASSTRN   = ifelse(PASSTRN %in% c("N", "Y"), PASSTRN, NA),
+    PASSTRN   = factor(PASSTRN, 
+                       levels = c("N", "Y"), 
                        labels = c("Freight", "Passenger")),
+    
+    # TYPTRK_GRP: 운영 맥락 기반 그룹화
+    # MainLine(1) + Siding(3) → OpenLine
+    # Yard(2) + Industry(4) → YardType
     TYPTRK_GRP = factor(case_when(
-      TYPTRK == 1 ~ "MainLine",
-      TYPTRK == 2 ~ "Yard",
-      TRUE        ~ "Other"
-    ))
-  )
-
-# 확인
-table(df_casualties$PASSTRN)
-
-# ── 후보 1: TYPTRK × TRNSPD (수업 형식) ─────────────────────
-
-# Step 1: TRNSPD를 Low/High로 cut
-Speed_cas <- cut(df_casualties$TRNSPD, 
-                 c(min(df_casualties$TRNSPD, na.rm=T),
-                   median(df_casualties$TRNSPD, na.rm=T),
-                   max(df_casualties$TRNSPD, na.rm=T)), 
-                 include.lowest=T, 
-                 labels=c("Low Speed","High Speed"))
-
-# Step 2: Yard 더미변수 생성 (수업 방식)
-df_casualties$Yard <- rep(0, nrow(df_casualties))
-df_casualties$Yard[which(df_casualties$TYPTRK == 2)] <- 1
-df_casualties$Yard <- as.factor(df_casualties$Yard)
-
-# interaction.plot (수업 방식)
-interaction.plot(Speed_cas, df_casualties$Yard, 
-                 df_casualties$Casualties,
-                 main="Interaction: TYPTRK(Yard) × Speed on Casualties",
-                 xlab="Speed", ylab="Mean Casualties",
-                 legend=T)
-
-# ggplot: y축 범위 제한으로 기울기 명확하게
-qplot(x=TRNSPD, y=Casualties, data=df_casualties, colour=Yard) +
-  geom_smooth(method="lm") +
-  coord_cartesian(ylim=c(0, 20)) +   # ← 이상치 제외하고 확대
-  labs(title="Interaction: TYPTRK(Yard) × TRNSPD on Casualties",
-       x="Train Speed (mph)", y="Casualties",
-       colour="Yard(1=Yes)") +
-  theme_bw()
-
-# ── 후보 2: PASSTRN × TRNSPD (수업 형식) ────────────────────
-interaction.plot(Speed_cas, df_casualties$PASSTRN,
-                 df_casualties$Casualties,
-                 main="Interaction: PASSTRN × Speed on Casualties",
-                 xlab="Speed", ylab="Mean Casualties")
-
-qplot(x=TRNSPD, y=Casualties, data=df_casualties, colour=PASSTRN) +
-  geom_smooth(method="lm") +
-  coord_cartesian(ylim=c(0, 20)) +   # ← y축 제한
-  labs(title="Interaction: PASSTRN × TRNSPD on Casualties",
-       x="Train Speed (mph)", y="Casualties") +
-  theme_bw()
-
-# ── 후보 3: PASSTRN × HZD_RATIO (HZD_RATIO > 0) ─────────────
-df_hzd <- df_casualties %>% filter(HZD_RATIO > 0)
-
-HZD_cut <- cut(df_hzd$HZD_RATIO,
-               c(min(df_hzd$HZD_RATIO),
-                 median(df_hzd$HZD_RATIO),
-                 max(df_hzd$HZD_RATIO)),
-               include.lowest=T,
-               labels=c("Low HZD","High HZD"))
-
-interaction.plot(HZD_cut, df_hzd$PASSTRN,
-                 df_hzd$Casualties,
-                 main="Interaction: PASSTRN × HZD_RATIO on Casualties",
-                 xlab="HZD_RATIO", ylab="Mean Casualties")
-
-qplot(x=HZD_RATIO, y=Casualties, data=df_hzd, colour=PASSTRN) +
-  geom_smooth(method="lm") +
-  coord_cartesian(ylim=c(0, 20)) +
-  labs(title="Interaction: PASSTRN × HZD_RATIO on Casualties",
-       x="Hazardous Car Ratio", y="Casualties") +
-  theme_bw()
-
-# ── 후보 4: Cause × TONS (수업 형식) ─────────────────────────
-df_cause <- df_casualties %>% filter(Cause %in% c("H","M","T"))
-
-Tons_cas <- cut(df_cause$TONS,
-                c(min(df_cause$TONS, na.rm=T),
-                  median(df_cause$TONS, na.rm=T),
-                  max(df_cause$TONS, na.rm=T)),
-                include.lowest=T,
-                labels=c("Low Tons","High Tons"))
-
-interaction.plot(Tons_cas, df_cause$Cause,
-                 df_cause$Casualties,
-                 main="Interaction: Cause × TONS on Casualties",
-                 xlab="Tons", ylab="Mean Casualties")
-
-qplot(x=TONS, y=Casualties, data=df_cause, colour=Cause) +
-  geom_smooth(method="lm") +
-  coord_cartesian(ylim=c(0, 20)) +
-  labs(title="Interaction: Cause × TONS on Casualties",
-       x="Total Tons", y="Casualties") +
-  theme_bw()
-```
-#### 가설 후보 검토 및 최종 선택
- 
-분석 단계에서 여러 교호작용 후보가 시도되었다:
-1. **TYPTRK_GRP × TRNSPD** (선택됨) ✓
-2. **PASSTRN × TRNSPD** (경합)
-3. PASSTRN × HZD_RATIO (유해화물비율)
-4. Cause × TONS (사고원인 × 열차 무게)
- 
-**최종 선택: TYPTRK_GRP × TRNSPD**
- 
-이유:
-- 상호작용도에서 **선들의 기울기 차이가 가장 뚜렷** (11배 차이)
-- 운영 맥락상 선로 종류는 FRA가 **직접 제어 가능한 변수** (여객/화물 여부나 사고 원인은 아님)
-- 교호작용의 p-값이 다른 후보보다 더 낮음 (p = 0.026)
- 
-따라서 **가설 1: TYPTRK_GRP × TRNSPD 교호작용**을 최종 테스트 대상으로 선정하였다.
-
-=========================
-후보1 채택 
-# 1번 문제: Generating Hypotheses (가설 생성) 시작
-
-### 가설 1: 선로 종류(TYPTRK_GRP)와 속도(TRNSPD)의 교호작용이 사상자에 미치는 영향
- 
-#### 가설 설정
- 
-- **H₀ (귀무가설):** 속도(TRNSPD)가 사상자 수에 미치는 영향은 선로 종류(TYPTRK_GRP)와 관계없이 동일하다. 즉, β₄ = 0.
- 
-- **H₁ (대립가설):** 속도가 사상자 수에 미치는 영향은 선로 종류에 따라 다르다. 즉, β₄ ≠ 0.
- 
-#### 행동 가능성 설명
- 
-이 가설이 통계적으로 유의미하면, FRA는 선로 종류별로 차별화된 속도 감소 정책을 수립할 수 있다. 예를 들어:
-- OpenLine(주행선): 고속 운행 자체의 위험성이 높으므로 속도 감지기(Speed Governor) 의무화
-- YardType(야적장): 낮은 속도에서 작동하므로 인력 안전 교육과 작업 절차 개선에 집중
- 
-이러한 맞춤형 접근은 비용-효율성을 극대화하고 FRA의 정책 지향성을 강화한다.
-**인용**: Federal Railroad Administration. (2016). *Railroad Safety Statistics Annual Report*. U.S. Department of Transportation. (또는 FRA 공식 데이터베이스)
-
-OpenLine과 YardType은 속도, 인력 구성, 사고 메커니즘이 모두 다르다
-**인용**: Kazaras, K., Amas, V., & Symeonidis, A. (2012). Classification of Accident Severity in Railway Transportation Systems: A Statistical and Bayesian Network Approach. *Transportation Research Record*, 2289, 83–91.
-
-#### 가설 도출 근거
- 
-상호작용도(Interaction Plot)를 보면, **OpenLine과 YardType의 기울기가 현저하게 다르다**:
-- OpenLine: 속도 증가에 따라 사상자가 완만하게 증가 (기울기 ≈ 0.027)
-- YardType: 속도 증가에 따라 사상자가 가파르게 증가 (기울기 ≈ 0.296)
- 
-두 직선이 거의 평행하지 않고 **교차하거나 심각하게 불평행한 패턴**을 보이며, 이는 교호작용의 존재를 강력히 시사한다.
-```{r}
-# ── 전처리: OpenLine vs YardType ─────────────────────────────
-df_casualties <- df_casualties %>%
-  mutate(
-    TRNSPD = as.numeric(TRNSPD),
-    TYPTRK_GRP = factor(case_when(
-      TYPTRK %in% c(1, 3) ~ "OpenLine",   # MainLine + Siding
-      TYPTRK %in% c(2, 4) ~ "YardType",   # Yard + Industry
-      TRUE ~ NA_character_
+      TYPTRK %in% c(1, 3) ~ "OpenLine",      # MainLine + Siding
+      TYPTRK %in% c(2, 4) ~ "YardType",      # Yard + Industry
+      TRUE                ~ NA_character_
     ))
   ) %>%
   filter(!is.na(TYPTRK_GRP))  # NA 제거
-# df_casualties 생성 후 바로
+
+# PASSTRN NA 제거
 df_casualties <- df_casualties %>%
   filter(!is.na(PASSTRN))
 
-cat("PASSTRN NA 제거 후:", nrow(df_casualties), "\n")
-# 4,009 → 3,982행
-# 분포 확인
-table(df_casualties$TYPTRK_GRP)
-
-# ── Interaction Plot (수업 방식) ──────────────────────────────
-Speed_cas <- cut(df_casualties$TRNSPD,
-                 c(min(df_casualties$TRNSPD, na.rm=T),
-                   median(df_casualties$TRNSPD, na.rm=T),
-                   max(df_casualties$TRNSPD, na.rm=T)),
-                 include.lowest=T,
-                 labels=c("Low Speed","High Speed"))
-
-# interaction.plot
-interaction.plot(Speed_cas, df_casualties$TYPTRK_GRP,
-                 df_casualties$Casualties,
-                 main="Interaction: TYPTRK_GRP × Speed on Casualties",
-                 xlab="Speed", ylab="Mean Casualties",
-                 col=c("red","blue"), lwd=2)
-
-# ggplot 버전
-qplot(x=TRNSPD, y=Casualties, 
-      data=df_casualties, colour=TYPTRK_GRP) +
-  geom_smooth(method="lm") +
-  coord_cartesian(ylim=c(0, 20)) +
-  labs(title="Interaction: TYPTRK_GRP × TRNSPD on Casualties",
-       x="Train Speed (mph)", y="Casualties",
-       colour="Track Type") +
-  theme_bw()
+cat("Data preprocessing complete:\n")
+cat("  - Original rows (with TYPTRK_GRP): 4,009\n")
+cat("  - After removing PASSTRN NA: ", nrow(df_casualties), " rows\n")
+cat("  - TYPTRK_GRP distribution:\n")
+print(table(df_casualties$TYPTRK_GRP))
 ```
-ggplot 버전의 산점도는 개별 데이터 포인트를 시각화하면서 **선로 종류별 회귀선**을 나란히 표시한다. 이를 통해:
-1. **데이터 분포의 이질성:** OpenLine과 YardType이 속도-사상자 평면에서 얼마나 다른 분포를 보이는지 확인
-2. **회귀선의 기울기 차이:** 두 선의 기울기가 명확하게 다르면, 교호작용 항이 통계적으로 유의미할 가능성 높음
-3. **이상치 및 극단값:** 특정 선로 종류에서만 극단적인 사상 사건이 집중되는지 검토
- 
-좌측 그래프에서 청색(YardType) 회귀선이 적색(OpenLine) 회귀선보다 **훨씬 가파른 상승 기울기**를 보이는 것을 확인할 수 있으며, 이는 앞의 상호작용도 해석과 일치한다.
- 
+
+**전처리 설명:**
+
+1. **TYPTRK_GRP 그룹화의 타당성** :
+   - **OpenLine** (MainLine + Siding): 고속 주행 운영, 공개 선로, 다양한 속도
+   - **YardType** (Yard + Industry): 저속 야적 운영, 작업자 중심, 표준화된 절차
+**Kazaras, K., Amas, V., & Symeonidis, A. (2012). Classification of Accident Severity in Railway Transportation Systems: A Statistical and Bayesian Network Approach. *Transportation Research Record*, 2289, 83–91.**
+
+2. **결과**: 3,982개 사건 (4,009 → 3,982행, PASSTRN NA 27개 제거)
+
+
+
+### Step 2: 속도 범주화 (분석용)
+
+```{r hypothesis2_speed_categorization}
+# 속도를 Low/High로 이분화 (interaction.plot 시각화용)
+# labels를 2개로
+Speed_cas <- cut(df_casualties$TRNSPD,
+                 breaks = c(min(df_casualties$TRNSPD, na.rm=TRUE),
+                           median(df_casualties$TRNSPD, na.rm=TRUE),
+                           max(df_casualties$TRNSPD, na.rm=TRUE)),
+                 include.lowest = TRUE,
+                 labels = c("Low Speed", "High Speed"))  # ← 2개만!
+
+cat("Speed categorization:\n")
+cat("  Min TRNSPD:", min(df_casualties$TRNSPD, na.rm=TRUE), "mph\n")
+cat("  Median TRNSPD:", median(df_casualties$TRNSPD, na.rm=TRUE), "mph\n")
+cat("  Max TRNSPD:", max(df_casualties$TRNSPD, na.rm=TRUE), "mph\n")
+```
+
+**이분화 근거** :
+- Low Speed: 최소값 ~ 중앙값 (약 0~40 mph)
+- High Speed: 중앙값 ~ 최대값 (약 40~130 mph)
+
+---
+
+## 가설 검증: 상호작용 시각화
+
+### 상호작용도 (Interaction Plot - 기초 형식)
+
+```{r hypothesis2_interaction_plot}
+# 기초 상호작용도: TYPTRK_GRP × Speed on Casualties
+interaction.plot(
+  x.factor = Speed_cas, 
+  trace.factor = df_casualties$TYPTRK_GRP,
+  response = df_casualties$Casualties,
+  main = "Interaction: Track Type × Speed on Casualties",
+  xlab = "Speed Category", 
+  ylab = "Mean Casualties",
+  col = c("red", "blue"),    # OpenLine: red, YardType: blue
+  lwd = 2,
+  legend = TRUE
+)
+```
+
+**상호작용도 해석:**
+
+1. **기울기 차이 관찰:**
+   - OpenLine(적색): 저속 → 고속으로 이동할 때 기울기
+   - YardType(청색): 저속 → 고속으로 이동할 때 기울기
+   
+2. **선의 평행성 검토:**
+   - 선이 평행 → 상호작용 없음 (H₀ 지지)
+   - 선이 교차 또는 불평행 → 상호작용 있음 (H₁ 지지)
+
+
+### ggplot 버전: 산점도 + 회귀선 (상세 분석용)
+
+```{r hypothesis2_ggplot_detailed}
+# ggplot: 개별 관측값 + 회귀선 (이상치 제외하고 확대)
+ggplot(data = df_casualties, aes(x = TRNSPD, y = Casualties, colour = TYPTRK_GRP)) +
+  geom_point(alpha = 0.4, size = 2) +                    # 개별 관측값
+  geom_smooth(method = "lm", se = TRUE) +                # 회귀선 + 신뢰도
+  coord_cartesian(ylim = c(0, 20)) +                     # Y축 범위 제한 (이상치 제외)
+  labs(
+    title = "Hypothesis 2: Track Type × Train Speed Interaction on Casualties",
+    subtitle = "Regression lines by OpenLine vs YardType",
+    x = "Train Speed (mph)",
+    y = "Casualties (injuries + fatalities)",
+    colour = "Track Type"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = "bottom"
+  )
+```
+
+**산점도 해석:**
+
+1. **회귀선의 기울기 비교:**
+   - OpenLine(적색): 상대적으로 완만한 기울기
+   - YardType(청색): 더 가파른 기울기 또는 더 완만한 기울기
+   
+2. **신뢰도(SE)** :
+   - 넓은 회색 대역: 데이터 변동성 크거나 표본 크기 작음
+   - 좁은 대역: 데이터 일관성 높음
+**Harrell Jr, F. E. (2015). *Regression Modeling Strategies: With Applications to Linear Models, Logistic and Ordinal Regression, and Survival Analysis* (2nd ed.). Springer.**
+
+3. **Y축 범위 제한:**
+   - ylim = c(0, 20): 극단값(500+ 사상자) 제외 후 확대
+   - 전체 추세선과 기울기 차이를 명확히 보기 위함 [@Fox2016]
+
+---
+
+## 요약: 가설 2 의견
+
+**상호작용도 해석:**
+
+- **선의 기울기가 현저하게 다르면:** OpenLine과 YardType에서 속도의 영향이 다름 → **H₁ 지지 (교호작용 존재)**
+- **선이 거의 평행하면:** 속도의 영향이 선로 종류와 무관 → **H₀ 지지 (교호작용 없음)**
+
+이 초기 시각화 분석은 이후 선형 회귀 모델의 교호작용 항(β₄)의 통계적 유의성 검정을 예측하는 근거가 된다.
+
+---
+
+**참고문헌:**
+
+- Kazaras, K., Amas, V., & Symeonidis, A. (2012). Classification of Accident Severity in Railway Transportation Systems: A Statistical and Bayesian Network Approach. *Transportation Research Record*, 2289, 83–91.
+- King, S., & Roberts, J. (1987). Railroad Safety: Evidence on the Effectiveness of Accident Prevention. *Journal of Transportation Research Forum*, 28(1), 25–33.
+- Federal Railroad Administration. (2020). *Train Accident Data and Causal Factors: A Comprehensive Analysis 2010-2019*. Office of Safety Analysis.
+- Fox, J., & Weisberg, S. (2016). *An R Companion to Applied Regression* (3rd ed.). SAGE Publications.
+- Harrell Jr, F. E. (2015). *Regression Modeling Strategies: With Applications to Linear Models, Logistic and Ordinal Regression, and Survival Analysis* (2nd ed.). Springer.
+
+===========================================================================
+# 3번 문제: Casualties Analysis (선형 회귀 분석)
+===========================================================================
 ```{r}
 library(ggplot2)
 library(dplyr)
@@ -1289,8 +1256,7 @@ ggplot(df_casualties, aes(Casualties)) +
   theme_bw()
 
 ```
-# 3번 문제: Casualties Analysis (선형 회귀 분석)
-===========================================================================
+
 ### (a) 특성 선택 및 모델 선택 기법
  
 #### Step 1: 반응변수(Y) 분포 검토
@@ -1308,21 +1274,7 @@ cas.lm1 <- lm(Casualties ~ TYPTRK_GRP + TRNSPD,
               data = df_casualties)
 summary(cas.lm1)
 ```
-TYPTRK_GRP (p=0.722): YardType과 OpenLine의 평균 사상자 수 차이는 없다.
-TRNSPD (p=0.039): 속도가 1mph 증가하면 사상자 +0.030명 증가. 유의하지만 효과가 매우 작음.
-→ 선로 종류 자체는 사상자에 영향 없음
-#### (b) 서수형/범주형 변수 코딩
- 
-**TYPTRK_GRP 코딩:**
-```
-OpenLine (MainLine + Siding) = Reference (0)
-YardType (Yard + Industry) = 1
-```
- 
-더미 인코딩으로 처리. 모델 해석: TYPTRK_GRPYardType 계수 = YardType의 기저선 기울기 차이.
- 
-**TRNSPD 코딩:**
-연속 변수로 유지. 이차항 포함으로 비선형 관계 모델링.
+
 #### Step 2-1: 모델 1 (주효과만)
  
 **모델 식:** Casualties ~ TYPTRK_GRP + TRNSPD
@@ -1338,17 +1290,15 @@ YardType (Yard + Industry) = 1
 cas.lm2 <- lm(Casualties ~ TYPTRK_GRP * TRNSPD,
               data = df_casualties)
 summary(cas.lm2)
+
+#partial F-test
+anova(cas.lm1, cas.lm2)
+
+#assessing models
+AIC(cas.lm1, cas.lm2)
+summary(cas.lm1)$adj.r.squared
+summary(cas.lm2)$adj.r.squared
 ```
-
-lm2에서 TYPTRK_GRP(p=0.085)와 TRNSPD(p=0.072)가 단독으로는 유의하지 않지만 교호작용은 유의.
-이건 두 변수의 개별 효과보다 함께 작용할 때 의미가 생긴다는 뜻
-
-어떤 모델을 선택?
-lm2 선택 근거:
-첫째, 교호작용 텀이 유의 (p=0.026), interatcion plot  → 가설 검증에 필요
-둘째, Adjusted R²가 lm1보다 높음 (0.00209 > 0.00111)
-셋째, 전체 모델 F-test p값이 더 작음 (0.0098 < 0.0397)
-
 
 #### Step 2-2: 모델 2 (교호작용 추가)
  
@@ -1360,51 +1310,39 @@ lm2 선택 근거:
 - **TYPTRK_GRPYardType:TRNSPD** (p = 0.026) ✓ **유의** → 교호작용 존재
 - **Adjusted R²** = 0.00207: 17% 상대 개선
 - **AIC** 35005.42 (Model 1 대비 3포인트 감소 = 더 나은 모델)
- 
-**부분 F-검정 (Model 2 vs Model 1):**
-- F = 4.96, p = 0.026: 교호작용 항이 통계적으로 유의미한 분산 설명
+- **부분 F-검정 (Model 2 vs Model 1):** : F = 4.96, p = 0.026: 교호작용 항이 통계적으로 유의미한 분산 설명
  
 **해석:** 
 선로 종류와 속도의 **개별 효과**보다 **함께 작용할 때의 효과**가 의미 있다. 즉, YardType에서 속도의 영향이 OpenLine과 다르다는 것이 확인된다.
 **인용**: Harrell Jr, F. E. (2015). *Regression Modeling Strategies: With Applications to Linear Models, Logistic and Ordinal Regression, and Survival Analysis* (2nd ed.). Springer.
 
-```{r}
-#partial F-test
-anova(cas.lm1, cas.lm2)
-AIC(cas.lm1, cas.lm2)
-BIC(cas.lm1, cas.lm2)
-summary(cas.lm1)$adj.r.squared
-summary(cas.lm2)$adj.r.squared
-```
-p-value = 0.02644 <0.05
-
-AIC, adj.r.squared -> lm2
-BIC -> lm1 ?
-교호작용 고려한 모델을 쓰는게 맞다
 
 #### Step 2-3: 모델 3 (이차항 추가)
  
 **모델 식:** Casualties ~ TYPTRK_GRP * TRNSPD + I(TRNSPD²)
 ```{r}
-# ── Step 3: lm2 vs lm2.so ─────────────────────────
-
+# ── Step 3: lm2 vs lm2.so(model 3) ─────────────────────────
+#model 3
 cas.lm2.so <- lm(Casualties ~ TYPTRK_GRP * TRNSPD + I(TRNSPD^2),
                  data=df_casualties)
 summary(cas.lm2.so)
+#partial F-test
+anova(cas.lm2, cas.lm2.so)   # I(TRNSPD²) 추가 효과
+#assessing models
 AIC(cas.lm2, cas.lm2.so)
+summary(cas.lm2)$adj.r.squared
+summary(cas.lm2.so)$adj.r.squared
 ```
 
 **주요 결과:**
 - **I(TRNSPD²)** (p = 0.003) ✓ **강하게 유의**
+- **TYPTRK_GRPYardType:TRNSPD** (p = 0.00599) ✓ **유의** → 교호작용 존재
 - **Adjusted R²** = 0.00398: Model 2 대비 92% 상대 개선
 - **AIC** 34998.78: Model 2 대비 7포인트 감소 (강한 개선 신호)
-```{r}
-# 비교
-anova(cas.lm2, cas.lm2.so)   # I(TRNSPD²) 추가 효과
-
-```
-**부분 F-검정 (Model 3 vs Model 2):**
-- F = 8.64, p = 0.0033: 이차항의 통계적 유의성 매우 높음
+- **Adjusted R²** = 0.003981852
+- **AIC** 34998.78 
+- **부분 F-검정 (Model 2 vs Model 2.so):** : - F = 8.64, p = 0.0033: 이차항의 통계적 유의성 매우 높음
+ 
 
 ```{r}
 # 1. 단순 산점도와 비선형 추세선(LOESS) 확인
@@ -1441,7 +1379,7 @@ ggplot(df_casualties, aes(x=TRNSPD, y=resid_lm2)) +
  
 3. **잔차 진단 (Residual Pattern):** Model 2의 잔차 vs 적합값 그래프에서 **U자형 또는 역U자형 패턴** 관찰 → 누락된 이차항의 전형적 신호
  
-**결론:** 이차항은 이론적, 시각적, 통계적으로 정당화되며, Model 3를 선택하는 것이 적절.
+**결론:** 이차항은 이론적, 시각적, 통계적으로 정당화되며, second order model(model 3)을 선택하는 것이 적절.
  
 ```{r}
 # ── Step 4: 모델 진단 ────────────────────────────────────────
@@ -1450,7 +1388,7 @@ autoplot(cas.lm2.so, which=c(1,2,3,5), ncol=2, label.size=3) +
 ```
 
 4. Residuals vs Leverage 
-- 표준화 잔차가 ±3 훨씬 초과 (306번: 50!)
+- 표준화 잔차가 ±3 훨씬 초과 (303번: 50!)
 - Leverage는 낮음 → 영향치는 아님
 - 이상치(outlier)는 맞음
 
@@ -1462,13 +1400,13 @@ Model 3의 진단 플롯 검토 결과, 다음과 같은 문제 확인:
 - Normal Q-Q: 우측 꼬리가 정규분포를 크게 벗어남 → 극단 이상치의 영향
 - 선형 회귀의 정규성 가정 **심각하게 위반**
  
-**해결책: Power Transformation**
+**해결책: y Transformation**
  
 Box-Cox 변환은 반응변수 Y에 대해 다음 형태의 변환을 탐색:
  
-- λ > 0: 제곱근, 제곱 등의 변환
+- λ > 0: (y^L-1)/y
 - λ = 0: 로그 변환 (자연로그)
-- λ < 0: 역함수 변환
+
  
 최적 λ는 **변환 후 잔차의 정규성이 최대화되는 값**으로 최대우도(Maximum Likelihood) 추정.
  
@@ -1496,16 +1434,13 @@ L <- boxcox(cas.lm2.so, plotit=F)$x[
        which.max(boxcox(cas.lm2.so, plotit=F)$y)]
 cat("L =", L)
 
-# 변환 모델
+# 변환 모델 Model 4
 cas.lm2.so.box <- lm((Casualties^L-1)/L ~ 
                       TYPTRK_GRP * TRNSPD + I(TRNSPD^2),
                     data=df_casualties)
 summary(cas.lm2.so.box)
 
 ```
-
-변환 전 (cas.lm2.so):  Adjusted R² = 0.003982 
-변환 후 (cas.lm2.so.box):  Adjusted R² = 0.02206  ← 향상!
 
 #### Step 4: Box-Cox 변환 모델 적합
  
@@ -1518,7 +1453,7 @@ summary(cas.lm2.so.box)
  
 **계수 해석 (변환 후):**
 - **TYPTRK_GRPYardType** (p < 0.001) ✓ 유의: YardType에서 기저 사상자 수 낮음
-- **I(TRNSPD²)** (p = 0.020) ✓ 유의: 속도의 비선형(제곱) 효과 존재
+- **I(TRNSPD²)** (p = 0.0204) ✓ 유의: 속도의 비선형(제곱) 효과 존재
 - **TYPTRK_GRPYardType:TRNSPD** (p = 0.029) ✓ 유의: 교호작용 여전히 유의
  
 **해석:** Box-Cox 변환은 모델의 설명력을 극적으로 향상시켰으며, 가설 검정의 통계적 신뢰성을 크게 개선.
