@@ -250,8 +250,8 @@ $$H_1:\;\beta_{\text{TYPTRK\_GRP(YardType):TRNSPD}} \neq 0 \quad \text{(Speed ef
 
 If this hypothesis proves statistically significant, the FRA can implement track-type-specific speed reduction policies:
 
-- **OpenLine (mainline/siding):** High-speed operation is inherently dangerous. Mandate speed governors.
-- **YardType (yard/industrial):** Low-speed operation. Focus on personnel training and procedural improvements.
+- **OpenLine (mainline/siding):** High-speed operation is inherently dangerous. The greater mass and speed typical of mainline operations mean that collision force and casualty potential are correspondingly greater (Liu et al., 2013). Therefore, policies should mandate speed governors or advanced positive train control (PTC) enforcement.
+- **YardType (yard/industrial):** Low-speed operation. According to the FRA's Switching Operations Fatality Analysis (SOFA, 2015), severe casualties in yards occur even at minimal speeds due to switching operations, crushing hazards, and slip/trip/falls. Therefore, policy focus should shift away from speed limits toward personnel training, ergonomic improvements, and procedural compliance (FRA, 2001).
 
 This targeted approach maximizes cost-effectiveness.
 
@@ -1453,7 +1453,6 @@ cat("Model 2 Adj.R^2:", summary(cas.lm2)$adj.r.squared, "\n")
 
 **Interpretation:** The combined effect of track type and speed is more meaningful than individual effects. YardType shows a different speed impact than OpenLine.
 
-**Citation:** Harrell Jr (2015). *Regression Modeling Strategies*. Springer.
 
 #### Step 2-3: Add Quadratic Term
 
@@ -1645,7 +1644,7 @@ cat("Box-Cox Y + sqrt(X):", summary(cas.lm3.sqrtx)$adj.r.squared, "\n")
 **Result:** AIC comparison (55.76 vs 68.00, 74.32) shows X transformation does not improve the model. Residual issues stem from Y's discrete structure, not X. We retain `cas.lm2.so.box` as the final model.
 
 ### Step 9: Bootstrap Confidence Intervals
-
+Although the Box-Cox method has addressed many issues with residual plots, normality and homoscedasticity remain significant problems. Therefore, we apply bootstrapping, a nonparametric method that does not assume normality.
 ```{r cas2_boot}
 boot.fn <- function(data, index){
   fit <- lm((Casualties^L - 1)/L ~
@@ -1767,6 +1766,7 @@ ggplot(data = df_cv, aes(x = Index)) +
 - Cross-validation: equal predictive performance.
 
 **Two independent methods (Bootstrap, CV) agree:** the interaction term is not statistically significant and provides no predictive value. **Therefore, the interaction is unnecessary both statistically and predictively.**
+**So, We cannot reject the null hypothesis.**
 
 ---
 
@@ -1922,42 +1922,6 @@ The following findings and recommendations are based on the converging statistic
 
 **Expected impact:** Passenger and commuter incidents, though less frequent than freight derailments, account for a disproportionate share of total casualties because of occupancy density. Casualty reduction in this segment yields the highest absolute impact per intervention.
 
-### Insight 5: Close the Derailment Safety-Net Gap (Tech Parity with PTC)
-
-**Evidence:** The Hypothesis 3 analysis identifies that PTC's effective collision-prevention has likely structurally reduced high-speed collision data in the FRA database. Yet derailment lacks any equivalent automated detection-and-prevention layer. The kinetic-energy quadratic term is robust across all damage analyses and within Hypothesis 4, indicating speed remains the dominant derailment severity driver.
-
-**Recommendation:** Build a derailment-prevention technology parity to PTC:
-
-- **Mandatory ATGMS expansion:** Require continuous track-geometry measurement (Automated Track Geometry Measurement System) on all main-line corridors carrying passenger services or hazmat, with anomaly thresholds triggering automatic speed restrictions.
-- **Early-warning derailment detection:** Deploy wayside detector networks for hot bearings, dragging equipment, and lateral-stress anomalies, with anomaly signals automatically transmitted to operating-train PTC systems for emergency speed reduction.
-- **Mainline maintenance frequency tied to derailment risk score:** Compute corridor-level derailment risk scores (combining defect history, traffic density, geometry tolerance, climate exposure) and tier maintenance frequency accordingly.
-
-**Expected impact:** A 15-25% reduction in mainline derailment frequency would substantially reduce both ACCDMG and Casualty totals, since derailment is the most common single cause of large-scale incidents.
-
-### Insight 6: Improve Data Collection to Refine Future Models
-
-**Evidence:** Across all hypotheses, the upper tail of severity (large-casualty or large-damage events) is poorly modeled by linear regression — driven by a small number of extreme events whose contextual features (time of day, weather, crew experience, maintenance history) are inadequately captured in the current FRA Form 54. The discrete nature of casualty data also limits linear modeling resolution.
-
-**Recommendation:** Modernize data collection and analytical infrastructure:
-
-- **Expanded incident reporting form:** For incidents with damage above the upper whisker or casualties >= 10, mandate enhanced contextual data collection including weather, time-of-day, crew certification level, prior maintenance interval, and relevant train-handling decisions.
-- **Methodological modernization:** Commission research into Poisson and Negative Binomial generalized linear models for casualty count modeling, which respect the discrete non-negative integer structure of casualty data and would likely produce more reliable inference than Box-Cox-transformed OLS.
-- **FRA analyst training:** Equip FRA analysts with modern regression and machine learning techniques (regularized regression, gradient boosting for tabular data, causal inference methods) to extract more reliable insights from existing data.
-
-**Expected impact:** Better data and methods enable better future regulation, creating a positive feedback loop where each round of analysis informs more targeted and effective FRA interventions.
-
-### Recommendation Priority Matrix
-
-| Priority | Recommendation | Evidence Strength | Implementation Speed |
-|----------|---------------|-------------------|----------------------|
-| Critical | Universal speed reduction with PTC-integrated enforcement | Strongest (4/4 hypotheses) | Medium-term (1-3 years) |
-| Critical | Rural high-speed corridor preventive infrastructure investment | Strong (Hypothesis 1) | Medium-term (2-5 years) |
-| Critical | Mega-train mass-speed coupled regulation + ECP brakes | Very Strong (Hypothesis 2) | Medium-term (2-4 years) |
-| High | ATGMS expansion and derailment early warning | Strong (Hypotheses 3, 4) | Long-term (3-7 years) |
-| High | Passenger/commuter casualty mitigation focus | Strong (Hypothesis 3 forward selection) | Medium-term (1-3 years) |
-| Medium | Hazmat block marshalling rules with buffer cars | Strong (Hypothesis 2) | Short-term (6-18 months) |
-| Medium | Enhanced incident data collection | Methodological | Short-term (immediate) |
-| Medium | Modern regression methodology adoption | Methodological | Short-term (1-2 years) |
 
 ---
 
